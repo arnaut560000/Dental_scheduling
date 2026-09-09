@@ -93,6 +93,7 @@ dialog::backdrop { background: #0f292680; }
 .notify-item small { color: #718481; }
 .notify-actions { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; }
 .notify-actions button, .notify-actions .button-link { margin: 0; }
+.staff-name { color: #58706d; font-size: 12px; font-weight: 700; white-space: nowrap; }
 
 @media (max-width: 760px) {
   main { padding: 30px 16px; }

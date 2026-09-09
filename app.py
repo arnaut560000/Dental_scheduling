@@ -123,6 +123,15 @@ def init_db():
         database.execute(
             "ALTER TABLE users ADD COLUMN last_seen_appointment_id INTEGER NOT NULL DEFAULT 0"
         )
+    if "display_name" not in user_columns:
+        database.execute("ALTER TABLE users ADD COLUMN display_name TEXT")
+        database.execute(
+            """
+            UPDATE users
+            SET display_name = username
+            WHERE display_name IS NULL OR TRIM(display_name) = ''
+            """
+        )
 
     user_count = database.execute(
         "SELECT COUNT(*) FROM users"
@@ -135,10 +144,14 @@ def init_db():
             )
         database.execute(
             """
-            INSERT INTO users (username, password_hash, role)
-            VALUES (?, ?, 'admin')
+            INSERT INTO users (username, display_name, password_hash, role)
+            VALUES (?, ?, ?, 'admin')
             """,
-            (ADMIN_USERNAME, generate_password_hash(ADMIN_PASSWORD)),
+            (
+                ADMIN_USERNAME,
+                ADMIN_USERNAME,
+                generate_password_hash(ADMIN_PASSWORD),
+            ),
         )
     database.commit()
 
@@ -155,7 +168,7 @@ def login_required(view):
 
         user = db().execute(
             """
-            SELECT id, username, role, last_seen_appointment_id
+            SELECT id, username, display_name, role, last_seen_appointment_id
             FROM users
             WHERE id=? AND is_active=1
             """,
@@ -380,7 +393,7 @@ def login():
         password = request.form.get("password", "")
         user = db().execute(
             """
-            SELECT id, username, password_hash, role
+            SELECT id, username, display_name, password_hash, role
             FROM users
             WHERE username=? AND is_active=1
             """,
@@ -392,6 +405,7 @@ def login():
             session.permanent = True
             session["user_id"] = user["id"]
             session["username"] = user["username"]
+            session["display_name"] = user["display_name"] or user["username"]
             session["role"] = user["role"]
             return redirect(url_for("dashboard"))
         flash("Invalid username or password.", "error")
@@ -508,6 +522,7 @@ def dashboard():
 def accounts():
     if request.method == "POST":
         username = request.form.get("username", "").strip()
+        display_name = request.form.get("display_name", "").strip()
         password = request.form.get("password", "")
         role = request.form.get("role", "scheduler")
 
@@ -516,6 +531,8 @@ def accounts():
                 "Username must be 3–40 characters: letters, numbers, dots, dashes, or underscores only.",
                 "error",
             )
+        elif not 2 <= len(display_name) <= 80:
+            flash("Display name must contain 2–80 characters.", "error")
         elif len(password) < PASSWORD_MIN_LENGTH:
             flash(
                 f"Password must contain at least {PASSWORD_MIN_LENGTH} characters.",
@@ -530,15 +547,26 @@ def accounts():
                 ).fetchone()[0]
                 cursor = db().execute(
                     """
-                    INSERT INTO users (username, password_hash, role, last_seen_appointment_id)
-                    VALUES (?, ?, ?, ?)
+                    INSERT INTO users (
+                        username,
+                        display_name,
+                        password_hash,
+                        role,
+                        last_seen_appointment_id
+                    ) VALUES (?, ?, ?, ?, ?)
                     """,
-                    (username, generate_password_hash(password), role, current_max_id),
+                    (
+                        username,
+                        display_name,
+                        generate_password_hash(password),
+                        role,
+                        current_max_id,
+                    ),
                 )
                 audit(
                     "account_created",
                     target_user_id=cursor.lastrowid,
-                    details=f"role={role}",
+                    details=f"role={role}; username={username}",
                 )
                 db().commit()
                 flash("Account created successfully.", "success")
@@ -548,9 +576,9 @@ def accounts():
 
     users = db().execute(
         """
-        SELECT id, username, role, is_active, created_at
+        SELECT id, username, display_name, role, is_active, created_at
         FROM users
-        ORDER BY role, username
+        ORDER BY role, display_name, username
         """
     ).fetchall()
     return render_template("accounts.html", users=users)
@@ -604,6 +632,51 @@ def toggle_account(user_id):
         flash("Account status updated.", "success")
 
     return redirect(url_for("accounts"))
+
+
+@app.post("/admin/accounts/<int:user_id>/reset-password")
+@roles_required("admin")
+def reset_staff_password(user_id):
+    new_password = request.form.get("new_password", "")
+
+    if user_id == session["user_id"]:
+        flash("Use Change password to update your own password.", "error")
+        return redirect(url_for("accounts"))
+
+    if len(new_password) < PASSWORD_MIN_LENGTH:
+        flash(
+            f"New password must contain at least {PASSWORD_MIN_LENGTH} characters.",
+            "error",
+        )
+        return redirect(url_for("accounts"))
+
+    target = db().execute(
+        """
+        SELECT id, username, display_name
+        FROM users
+        WHERE id=?
+        """,
+        (user_id,),
+    ).fetchone()
+
+    if not target:
+        flash("Account not found.", "error")
+        return redirect(url_for("accounts"))
+
+    db().execute(
+        "UPDATE users SET password_hash=? WHERE id=?",
+        (generate_password_hash(new_password), user_id),
+    )
+    audit(
+        "password_reset_by_admin",
+        target_user_id=user_id,
+        details=f"username={target['username']}",
+    )
+    db().commit()
+
+    flash(f"Password reset for {target['display_name'] or target['username']}.", "success")
+    return redirect(url_for("accounts"))
+
 
 @app.get("/admin/appointments")
 @roles_required("admin", "scheduler")
@@ -733,7 +806,7 @@ def change_password():
 
 
 @app.get("/admin/export")
-@roles_required("admin", "scheduler")
+@roles_required("admin")
 def export_day():
     selected = request.args.get("date", date.today().isoformat())
     rows = db().execute(
