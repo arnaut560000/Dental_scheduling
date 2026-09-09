@@ -1,0 +1,68 @@
+{% extends 'base.html' %}
+
+{% block title %}Scheduled Clients · SmileCare{% endblock %}
+{% block content %}
+  <div class="page-title">
+    <div>
+      <p class="eyebrow">CLIENT MANAGEMENT</p>
+      <h1>Scheduled clients</h1>
+    </div>
+  </div>
+
+  <form class="filters card" method="get">
+    <label>Date<input type="date" name="date" value="{{ selected_date }}"></label>
+    <label>
+      Status
+      <select name="status">
+        <option value="">All statuses</option>
+        {% for item in ['Pending', 'Approved', 'Finished'] %}
+          <option value="{{ item }}" {% if selected_status == item %}selected{% endif %}>{{ item }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <button>Filter</button>
+    {% if selected_date %}
+      <a class="button-link secondary" href="{{ url_for('export_day', date=selected_date) }}">Export this day</a>
+    {% endif %}
+  </form>
+
+  <section class="card table-card">
+    {% if appointments %}
+      <table class="wide">
+        <thead>
+          <tr><th>Schedule</th><th>Client</th><th>Details</th><th>Contact</th><th>Approval</th></tr>
+        </thead>
+        <tbody>
+          {% for appointment in appointments %}
+            <tr>
+              <td>{{ appointment.appointment_date }}<br><strong>{{ appointment.appointment_time|time12 }}</strong></td>
+              <td><strong>{{ appointment.last_name }}, {{ appointment.first_name }} {{ appointment.middle_initial }}</strong><br>{{ appointment.birth_date }}</td>
+              <td>{{ appointment.barangay }}<br>{{ appointment.category }}</td>
+              <td>{{ appointment.contact_number }}<br>{{ appointment.email }}</td>
+              <td>
+                <span class="badge {{ appointment.status|lower }}">{{ appointment.status }}</span>
+                {% if appointment.status == 'Pending' %}
+                  <form method="post" action="{{ url_for('set_status', appointment_id=appointment.id) }}">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <input type="hidden" name="status" value="Approved">
+                    <button class="small approve">Approve request</button>
+                  </form>
+                {% elif appointment.status == 'Approved' %}
+                  <form method="post" action="{{ url_for('set_status', appointment_id=appointment.id) }}">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <input type="hidden" name="status" value="Finished">
+                    <button class="small finish">Mark finished</button>
+                  </form>
+                {% else %}
+                  <span class="notice">Client served</span>
+                {% endif %}
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <p class="empty">No clients match this filter.</p>
+    {% endif %}
+  </section>
+{% endblock %}

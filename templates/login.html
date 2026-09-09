@@ -1,0 +1,13 @@
+{% extends 'base.html' %}
+
+{% block content %}
+  <form class="card login" method="post">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <p class="eyebrow">STAFF ONLY</p>
+    <h1>Admin sign in</h1>
+    <label>Username<input name="username" required autofocus></label>
+    <label>Password<input type="password" name="password" required></label>
+    <button>Sign in</button>
+    <p class="notice">Change the default credentials with environment variables before deployment.</p>
+  </form>
+{% endblock %}

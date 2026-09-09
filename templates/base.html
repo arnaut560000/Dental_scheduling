@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{% block title %}Free Tooth Removal{% endblock %}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <meta name="csrf-token" content="{{ csrf_token() }}">
+  </head>
+  <body>
+    <header>
+      <a class="brand" href="{{ url_for('request_appointment') }}">
+        SmileCare <span>Free Tooth Removal</span>
+      </a>
+      {% if session.user_id %}
+        <nav>
+          <a href="{{ url_for('dashboard') }}">Dashboard</a>
+          <a href="{{ url_for('appointments') }}">Clients</a>
+          {% if session.role == 'admin' %}
+            <a href="{{ url_for('accounts') }}">Accounts</a>
+          {% endif %}
+          <a href="{{ url_for('change_password') }}">Change password</a>
+          <button type="button" id="notify-bell" class="notify-bell" title="New client requests" hidden>
+            🔔<span id="notify-count" class="notify-badge">0</span>
+          </button>
+          <a href="{{ url_for('logout') }}">Log out</a>
+        </nav>
+      {% else %}
+        <a class="admin-link" href="{{ url_for('login') }}">Staff sign in</a>
+      {% endif %}
+    </header>
+    <main>
+      {% with messages = get_flashed_messages(with_categories=true) %}
+        {% for category, message in messages %}
+          <div class="flash {{ category }}">{{ message }}</div>
+        {% endfor %}
+      {% endwith %}
+      {% block content %}{% endblock %}
+    </main>
+    <footer>Free tooth removal scheduling · Monday, Wednesday & Friday · 15 clients per day</footer>
+
+    {% if session.user_id %}
+      <dialog id="notify-modal" aria-labelledby="notify-heading">
+        <div class="modal-header">
+          <div>
+            <p class="eyebrow">NEW REQUESTS</p>
+            <h2 id="notify-heading">New client requests</h2>
+          </div>
+          <button class="close-modal" id="notify-close" type="button" aria-label="Close">×</button>
+        </div>
+        <p class="notice">A client just submitted a new schedule request. Review it below or open the Clients page.</p>
+        <div id="notify-list" class="notify-list"></div>
+        <div class="notify-actions">
+          <a class="button-link secondary" href="{{ url_for('appointments') }}">Open Clients page</a>
+          <button id="notify-dismiss" type="button">Got it, dismiss</button>
+        </div>
+      </dialog>
+
+      <script>
+        (function () {
+          const bell = document.getElementById('notify-bell');
+          const countBadge = document.getElementById('notify-count');
+          const modal = document.getElementById('notify-modal');
+          const list = document.getElementById('notify-list');
+          const dismissBtn = document.getElementById('notify-dismiss');
+          const closeBtn = document.getElementById('notify-close');
+          let pending = [];
+          const csrfToken = document
+            .querySelector('meta[name="csrf-token"]')
+            .getAttribute('content');
+
+          function escapeHtml(value) {
+            const div = document.createElement('div');
+            div.textContent = value == null ? '' : value;
+            return div.innerHTML;
+          }
+
+          function render() {
+            if (!pending.length) {
+              bell.hidden = true;
+              return;
+            }
+            bell.hidden = false;
+            countBadge.textContent = pending.length;
+            list.innerHTML = pending.map(function (item) {
+              return (
+                '<article class="notify-item">' +
+                  '<div class="notify-item-head">' +
+                    '<strong>' + escapeHtml(item.name) + '</strong>' +
+                    '<span class="badge">' + escapeHtml(item.category) + '</span>' +
+                  '</div>' +
+                  '<p>' + escapeHtml(item.barangay) + ' &middot; ' + escapeHtml(item.contact_number) + '</p>' +
+                  '<p><strong>Requested:</strong> ' + escapeHtml(item.appointment_date) + ' at ' + escapeHtml(item.appointment_time) + '</p>' +
+                  '<small>Submitted ' + escapeHtml(item.submitted_at) + '</small>' +
+                '</article>'
+              );
+            }).join('');
+          }
+
+          async function poll() {
+            try {
+              const response = await fetch('{{ url_for("notifications") }}');
+              if (!response.ok) return;
+              const data = await response.json();
+              if (data.requests && data.requests.length) {
+                pending = data.requests;
+                render();
+                if (!modal.open) modal.showModal();
+              }
+            } catch (error) {
+              /* network hiccup: try again on the next poll */
+            }
+          }
+
+          async function dismiss() {
+            if (pending.length) {
+              const lastId = Math.max.apply(null, pending.map(function (item) { return item.id; }));
+              try {
+                await fetch('{{ url_for("acknowledge_notifications") }}', {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                    'X-CSRFToken': csrfToken,
+                  },
+                  body: 'last_id=' + encodeURIComponent(lastId),
+                });
+              } catch (error) {
+                /* if this fails, the same requests will just show again next poll */
+              }
+              pending = [];
+              render();
+            }
+            if (modal.open) modal.close();
+          }
+
+          dismissBtn.addEventListener('click', dismiss);
+          closeBtn.addEventListener('click', dismiss);
+          modal.addEventListener('cancel', dismiss);
+          bell.addEventListener('click', function () {
+            if (pending.length && !modal.open) modal.showModal();
+          });
+
+          poll();
+          setInterval(poll, 8000);
+        })();
+      </script>
+    {% endif %}
+  </body>
+</html>

@@ -1,0 +1,57 @@
+{% extends 'base.html' %}
+
+{% block title %}Staff Accounts · SmileCare{% endblock %}
+
+{% block content %}
+  <div class="page-title">
+    <div>
+      <p class="eyebrow">ADMIN ONLY</p>
+      <h1>Staff accounts</h1>
+    </div>
+  </div>
+
+  <section class="dashboard-grid">
+    <form class="card" method="post">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <h2>Add an account</h2>
+      <label>Username<input name="username" minlength="3" required></label>
+      <label>Password<input type="password" name="password" minlength="10" required></label>
+      <label>
+        Role
+        <select name="role">
+          <option value="scheduler">Scheduler</option>
+          <option value="admin">Administrator</option>
+        </select>
+      </label>
+      <button type="submit">Create account</button>
+    </form>
+
+    <section class="card table-card">
+      <h2>Existing accounts</h2>
+      <table>
+        <thead>
+          <tr><th>Username</th><th>Role</th><th>Status</th><th>Action</th></tr>
+        </thead>
+        <tbody>
+          {% for user in users %}
+            <tr>
+              <td>{{ user.username }}</td>
+              <td>{{ user.role|title }}</td>
+              <td>{{ 'Active' if user.is_active else 'Disabled' }}</td>
+              <td>
+                {% if user.id != session.user_id %}
+                  <form method="post" action="{{ url_for('toggle_account', user_id=user.id) }}">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <button class="small" type="submit">{{ 'Disable' if user.is_active else 'Enable' }}</button>
+                  </form>
+                {% else %}
+                  Current account
+                {% endif %}
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </section>
+  </section>
+{% endblock %}

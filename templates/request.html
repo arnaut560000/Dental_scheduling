@@ -1,0 +1,130 @@
+{% extends 'base.html' %}
+
+{% block title %}Request a Schedule · SmileCare{% endblock %}
+{% block content %}
+  <section class="hero">
+    <p class="eyebrow">ONLINE REQUEST</p>
+    <h1>Reserve your free tooth removal schedule.</h1>
+    <p>Choose a free 15-minute slot from 8:00 AM to 12:00 PM on Monday, Wednesday, or Friday. Each day accepts a maximum of 15 clients.</p>
+  </section>
+
+  <form class="card appointment-form" method="post">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <h2>Client information</h2>
+    <div class="form-grid">
+      <label>Last name*<input name="last_name" required value="{{ request.form.last_name }}"></label>
+      <label>First name*<input name="first_name" required value="{{ request.form.first_name }}"></label>
+      <label>Middle initial<input name="middle_initial" maxlength="5" value="{{ request.form.middle_initial }}"></label>
+      <label>Birth date*<input type="date" name="birth_date" required value="{{ request.form.birth_date }}"></label>
+      <label>Barangay*<input name="barangay" required value="{{ request.form.barangay }}"></label>
+      <label>
+        Sector*
+        <select name="category" required>
+          <option value="">Select sector</option>
+          {% for category in ['Regular', 'PWD', 'Senior Citizen'] %}
+            <option value="{{ category }}" {% if request.form.category == category %}selected{% endif %}>{{ category }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>Contact number*<input type="tel" name="contact_number" required value="{{ request.form.contact_number }}"></label>
+      <label>Email address<input type="email" name="email" value="{{ request.form.email }}"></label>
+    </div>
+
+    <hr>
+    <h2>Choose a schedule</h2>
+    <input id="appointment_date" type="hidden" name="appointment_date" required>
+    <input id="appointment_time" type="hidden" name="appointment_time" required>
+    <button class="schedule-trigger" id="open-schedule" type="button">Choose a schedule</button>
+    <p id="selected-schedule" class="selected-schedule">No schedule selected.</p>
+    <button type="submit">Submit request</button>
+    <p class="notice">Submitting does not confirm the appointment. The clinic administrator will review your request. One request per contact number is allowed every {{ cooldown_days }} days.</p>
+  </form>
+
+  <dialog id="schedule-modal" aria-labelledby="schedule-heading">
+    <div class="modal-header">
+      <div>
+        <p class="eyebrow">CHOOSE A SCHEDULE</p>
+        <h2 id="schedule-heading">Available clinic times</h2>
+      </div>
+      <button class="close-modal" id="close-schedule" type="button" aria-label="Close">×</button>
+    </div>
+    <div class="week-navigation">
+      <button id="previous-week" type="button">← Previous week</button>
+      <strong id="week-label"></strong>
+      <button id="next-week" type="button">Next week →</button>
+    </div>
+    <p class="notice">Green slots are available. Gray slots have already been taken or are unavailable.</p>
+    <div id="week-grid" class="week-grid"></div>
+  </dialog>
+
+  <script>
+    const dateInput = document.getElementById('appointment_date');
+    const timeInput = document.getElementById('appointment_time');
+    const selectedSchedule = document.getElementById('selected-schedule');
+    const modal = document.getElementById('schedule-modal');
+    const weekGrid = document.getElementById('week-grid');
+    const weekLabel = document.getElementById('week-label');
+    let weekStart = '';
+
+    const toTime = value =>
+      new Date(`2000-01-01T${value}`).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+    const formatDate = value =>
+      new Date(`${value}T00:00:00`).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' });
+
+    async function loadWeek() {
+      weekGrid.innerHTML = '<p class="empty">Loading schedule…</p>';
+      const response = await fetch(`/week-slots${weekStart ? `?week=${weekStart}` : ''}`);
+      const calendar = await response.json();
+      weekStart = calendar.week;
+
+      const monday = new Date(`${weekStart}T00:00:00`);
+      const friday = new Date(monday);
+      friday.setDate(monday.getDate() + 4);
+      weekLabel.textContent = `${formatDate(weekStart)} – ${formatDate(friday.toISOString().slice(0, 10))}`;
+      weekGrid.innerHTML = '';
+
+      calendar.days.forEach(day => {
+        const column = document.createElement('section');
+        column.className = 'day-column';
+        column.innerHTML = `<h3>${day.label}<small>${day.display_date} · ${day.count}/15 taken</small></h3>`;
+
+        day.slots.forEach(slot => {
+          const button = document.createElement('button');
+          const endMinutes = Number(slot.time.slice(0, 2)) * 60 + Number(slot.time.slice(3)) + 15;
+          const endTime = `${String(Math.floor(endMinutes / 60)).padStart(2, '0')}:${String(endMinutes % 60).padStart(2, '0')}`;
+
+          button.type = 'button';
+          button.textContent = `${toTime(slot.time)} to ${toTime(endTime)}`;
+          button.className = `week-slot ${slot.state}`;
+          button.disabled = slot.state !== 'available';
+          button.addEventListener('click', () => {
+            dateInput.value = day.date;
+            timeInput.value = slot.time;
+            selectedSchedule.textContent = `Selected: ${day.label}, ${formatDate(day.date)} — ${toTime(slot.time)} to ${toTime(endTime)}`;
+            modal.close();
+          });
+          column.appendChild(button);
+        });
+        weekGrid.appendChild(column);
+      });
+    }
+
+    document.getElementById('open-schedule').addEventListener('click', async () => {
+      await loadWeek();
+      modal.showModal();
+    });
+    document.getElementById('close-schedule').addEventListener('click', () => modal.close());
+    document.getElementById('previous-week').addEventListener('click', () => {
+      const currentWeek = new Date(`${weekStart}T00:00:00`);
+      currentWeek.setDate(currentWeek.getDate() - 7);
+      weekStart = currentWeek.toISOString().slice(0, 10);
+      loadWeek();
+    });
+    document.getElementById('next-week').addEventListener('click', () => {
+      const currentWeek = new Date(`${weekStart}T00:00:00`);
+      currentWeek.setDate(currentWeek.getDate() + 7);
+      weekStart = currentWeek.toISOString().slice(0, 10);
+      loadWeek();
+    });
+  </script>
+{% endblock %}

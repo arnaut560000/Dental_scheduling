@@ -1,0 +1,86 @@
+{% extends 'base.html' %}
+
+{% block title %}Dashboard · SmileCare{% endblock %}
+
+{% block content %}
+  <div class="page-title">
+    <div>
+      <p class="eyebrow">ADMIN OVERVIEW</p>
+      <h1>Clinic dashboard</h1>
+    </div>
+    <a class="button-link" href="{{ url_for('export_day', date=today) }}">Export today’s list</a>
+  </div>
+
+  <section class="stats">
+    <div><span>Total requests</span><b>{{ totals.all }}</b></div>
+    <div><span>Pending approval</span><b>{{ totals.pending }}</b></div>
+    <div><span>Scheduled today</span><b>{{ totals.today }}</b></div>
+    <div><span>Clients served</span><b>{{ totals.served }}</b></div>
+  </section>
+
+  <div class="dashboard-grid">
+    <section class="card">
+      <h2>Upcoming clients</h2>
+      {% if upcoming %}
+        <table>
+          <thead>
+            <tr><th>Date</th><th>Time</th><th>Client</th><th>Status</th></tr>
+          </thead>
+          <tbody>
+            {% for appointment in upcoming %}
+              <tr>
+                <td>{{ appointment.appointment_date }}</td>
+                <td>{{ appointment.appointment_time|time12 }}</td>
+                <td>{{ appointment.last_name }}, {{ appointment.first_name }}</td>
+                <td><span class="badge {{ appointment.status|lower }}">{{ appointment.status }}</span></td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      {% else %}
+        <p class="empty">No upcoming clients yet.</p>
+      {% endif %}
+    </section>
+
+    <section class="card">
+      <h2>Upcoming daily load</h2>
+      {% for day in daily %}
+        <div class="load">
+          <span>{{ day.appointment_date }}</span>
+          <div><i style="width: {{ (day.count / 15 * 100)|int }}%"></i></div>
+          <b>{{ day.count }}/15</b>
+        </div>
+      {% else %}
+        <p class="empty">No schedules yet.</p>
+      {% endfor %}
+    </section>
+  </div>
+
+  <section class="card" style="margin-top: 22px;">
+    <h2>Automatic analytics</h2>
+    <div class="stats">
+      <div><span>This month’s requests</span><b>{{ analytics.this_month }}</b></div>
+      <div><span>Approval rate</span><b>{{ analytics.approval_rate }}%</b></div>
+    </div>
+    <div class="dashboard-grid">
+      <div>
+        <h3>Requests by status</h3>
+        {% for item in analytics.by_status %}
+          <p>{{ item.status }}: <strong>{{ item.count }}</strong></p>
+        {% endfor %}
+      </div>
+      <div>
+        <h3>Requests by category</h3>
+        {% for item in analytics.by_category %}
+          <p>{{ item.category }}: <strong>{{ item.count }}</strong></p>
+        {% endfor %}
+      </div>
+      <div>
+        <h3>Top barangays</h3>
+        {% for item in analytics.by_barangay %}
+          <p>{{ item.barangay }}: <strong>{{ item.count }}</strong></p>
+        {% endfor %}
+      </div>
+    </div>
+  </section>
+{% endblock %}
