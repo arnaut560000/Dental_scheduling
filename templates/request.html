@@ -44,7 +44,7 @@
         <fieldset class="choice-group gender-group">
           <legend>Gender*</legend>
           <div class="option-list gender-options">
-            {% for gender in ['Female', 'Male', 'Prefer not to say'] %}
+            {% for gender in ['Female', 'Male', 'Others'] %}
               <label class="choice-option">
                 <input type="radio" name="gender" value="{{ gender }}" required {% if request.form.gender == gender %}checked{% endif %}>
                 <span>{{ gender }}</span>
