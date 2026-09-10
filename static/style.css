@@ -35,6 +35,8 @@ label { font-weight: 700; display: flex; flex-direction: column; gap: 6px; color
 .choice-group { border: 0; padding: 0; margin: 0; min-width: 0; }
 .choice-group legend { font-weight: 700; color: #355452; margin-bottom: 6px; }
 .option-list { display: grid; gap: 8px; margin-top: 8px; }
+.sector-group { grid-column: 1 / -1; background: var(--pale); border: 1px solid var(--line); border-radius: 10px; padding: 16px; }
+.sector-options { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .choice-option { flex-direction: row; align-items: center; gap: 9px; border: 1px solid #bfd0cb; border-radius: 7px; padding: 10px 12px; font-weight: 400; cursor: pointer; }
 .choice-option input { width: 17px; height: 17px; padding: 0; margin: 0; }
 .consent-check { flex-direction: row; align-items: flex-start; gap: 9px; margin-top: 20px; font-weight: 400; }
@@ -132,6 +134,7 @@ dialog::backdrop { background: #0f292680; }
 @media (max-width: 760px) {
   main { padding: 30px 16px; }
   .form-grid, .dashboard-grid, .analytics-detail-grid, .week-grid { grid-template-columns: 1fr; }
+  .sector-options { grid-template-columns: 1fr; }
   .stats { grid-template-columns: repeat(2, 1fr); }
   .page-title { align-items: start; gap: 16px; flex-direction: column; }
   .filters { align-items: stretch; flex-direction: column; }

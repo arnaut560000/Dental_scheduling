@@ -18,10 +18,10 @@
       <label>Middle initial<input name="middle_initial" maxlength="5" value="{{ request.form.middle_initial }}"></label>
       <label>Birth date*<input type="date" name="birth_date" required value="{{ request.form.birth_date }}"></label>
       <label>Barangay*<input name="barangay" maxlength="100" required value="{{ request.form.barangay }}"></label>
-      <fieldset class="choice-group">
+      <fieldset class="choice-group sector-group">
         <legend>Sector*</legend>
         <span class="notice">Choose one sector.</span>
-        <div class="option-list">
+        <div class="option-list sector-options">
           {% for category in ['Regular', 'PWD', 'Senior Citizen'] %}
             <label class="choice-option">
               <input type="checkbox" name="category" value="{{ category }}" {% if category in request.form.getlist('category') %}checked{% endif %}>
