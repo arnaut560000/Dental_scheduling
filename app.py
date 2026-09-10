@@ -21,6 +21,11 @@ from flask import (
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from flask_wtf.csrf import CSRFError, CSRFProtect
+from reportlab.lib import colors
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.lib.units import mm
+from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 from werkzeug.security import check_password_hash, generate_password_hash
 
 app = Flask(__name__)
@@ -107,6 +112,7 @@ def init_db():
             status TEXT NOT NULL DEFAULT 'Waiting for schedule',
             status_reason TEXT,
             scheduled_appointment_id INTEGER UNIQUE,
+            scheduled_at TEXT,
             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
         );
         CREATE INDEX IF NOT EXISTS idx_client_requests_status
@@ -169,6 +175,8 @@ def init_db():
     }
     if "status_reason" not in request_columns:
         database.execute("ALTER TABLE client_requests ADD COLUMN status_reason TEXT")
+    if "scheduled_at" not in request_columns:
+        database.execute("ALTER TABLE client_requests ADD COLUMN scheduled_at TEXT")
 
     user_columns = {row["name"] for row in database.execute("PRAGMA table_info(users)").fetchall()}
     if "last_seen_appointment_id" not in user_columns:
@@ -305,6 +313,274 @@ def record_appointment_history(
             notes,
         ),
     )
+
+
+def analytics_range():
+    """Return a safe, inclusive analytics date range and selected trend grouping."""
+    default_end = date.today()
+    default_start = default_end - timedelta(days=29)
+    start_value = request.args.get("start_date", default_start.isoformat())
+    end_value = request.args.get("end_date", default_end.isoformat())
+    trend = request.args.get("trend", "daily")
+
+    try:
+        start = datetime.strptime(start_value, "%Y-%m-%d").date()
+    except (TypeError, ValueError):
+        start = default_start
+    try:
+        end = datetime.strptime(end_value, "%Y-%m-%d").date()
+    except (TypeError, ValueError):
+        end = default_end
+    if start > end:
+        start, end = end, start
+    if trend not in {"daily", "weekly", "monthly"}:
+        trend = "daily"
+    return start.isoformat(), end.isoformat(), trend
+
+
+def build_analytics(start_date, end_date, trend):
+    """Build the dashboard and export metrics for one inclusive date range."""
+    database = db()
+    request_params = (start_date, end_date)
+    appointment_params = (start_date, end_date)
+    bucket_expression = {
+        "daily": "date({column})",
+        "weekly": "strftime('%Y-W%W', {column})",
+        "monthly": "strftime('%Y-%m', {column})",
+    }[trend]
+    request_bucket = bucket_expression.format(column="created_at")
+    appointment_bucket = bucket_expression.format(column="appointment_date")
+
+    requests_received = database.execute(
+        """
+        SELECT COUNT(*) FROM client_requests
+        WHERE date(created_at) BETWEEN ? AND ?
+        """,
+        request_params,
+    ).fetchone()[0]
+    appointments_scheduled = database.execute(
+        """
+        SELECT COUNT(*) FROM appointments
+        WHERE appointment_date BETWEEN ? AND ?
+        """,
+        appointment_params,
+    ).fetchone()[0]
+    served = database.execute(
+        """
+        SELECT COUNT(*) FROM appointments
+        WHERE appointment_date BETWEEN ? AND ? AND status='Finished'
+        """,
+        appointment_params,
+    ).fetchone()[0]
+    cancelled = database.execute(
+        """
+        SELECT COUNT(*) FROM appointments
+        WHERE appointment_date BETWEEN ? AND ? AND status='Cancelled'
+        """,
+        appointment_params,
+    ).fetchone()[0]
+    no_shows = database.execute(
+        """
+        SELECT COUNT(*) FROM appointments
+        WHERE appointment_date BETWEEN ? AND ? AND status='No-show'
+        """,
+        appointment_params,
+    ).fetchone()[0]
+    approval_rate = round(
+        100 * database.execute(
+            """
+            SELECT COUNT(*) FROM appointments
+            WHERE appointment_date BETWEEN ? AND ?
+              AND status IN ('Approved', 'Finished')
+            """,
+            appointment_params,
+        ).fetchone()[0] / appointments_scheduled,
+        1,
+    ) if appointments_scheduled else 0
+    outcome_total = served + cancelled + no_shows
+    completed_service_rate = round(100 * served / appointments_scheduled, 1) if appointments_scheduled else 0
+    cancellation_rate = round(100 * cancelled / outcome_total, 1) if outcome_total else 0
+    no_show_rate = round(100 * no_shows / outcome_total, 1) if outcome_total else 0
+    average_wait_hours = database.execute(
+        """
+        SELECT ROUND(AVG((julianday(scheduled_at) - julianday(created_at)) * 24), 1)
+        FROM client_requests
+        WHERE scheduled_at IS NOT NULL
+          AND date(created_at) BETWEEN ? AND ?
+        """,
+        request_params,
+    ).fetchone()[0]
+    by_status = database.execute(
+        """
+        SELECT status, COUNT(*) AS count FROM appointments
+        WHERE appointment_date BETWEEN ? AND ?
+        GROUP BY status ORDER BY count DESC, status ASC
+        """,
+        appointment_params,
+    ).fetchall()
+    by_category = database.execute(
+        """
+        SELECT category, COUNT(*) AS count FROM client_requests
+        WHERE date(created_at) BETWEEN ? AND ?
+        GROUP BY category ORDER BY count DESC, category ASC
+        """,
+        request_params,
+    ).fetchall()
+    by_barangay = database.execute(
+        """
+        SELECT barangay, COUNT(*) AS count FROM client_requests
+        WHERE date(created_at) BETWEEN ? AND ?
+        GROUP BY barangay ORDER BY count DESC, barangay ASC LIMIT 5
+        """,
+        request_params,
+    ).fetchall()
+
+    request_trend = database.execute(
+        f"""
+        SELECT {request_bucket} AS bucket, COUNT(*) AS count
+        FROM client_requests
+        WHERE date(created_at) BETWEEN ? AND ?
+        GROUP BY bucket
+        ORDER BY bucket
+        """,
+        request_params,
+    ).fetchall()
+    served_trend = database.execute(
+        f"""
+        SELECT {appointment_bucket} AS bucket, COUNT(*) AS count
+        FROM appointments
+        WHERE appointment_date BETWEEN ? AND ? AND status='Finished'
+        GROUP BY bucket
+        ORDER BY bucket
+        """,
+        appointment_params,
+    ).fetchall()
+    trend_counts = {}
+    for row in request_trend:
+        trend_counts.setdefault(row["bucket"], {"bucket": row["bucket"], "requests": 0, "served": 0})["requests"] = row["count"]
+    for row in served_trend:
+        trend_counts.setdefault(row["bucket"], {"bucket": row["bucket"], "requests": 0, "served": 0})["served"] = row["count"]
+    trends = [trend_counts[bucket] for bucket in sorted(trend_counts)]
+    max_trend = max((item["requests"] for item in trends), default=1)
+    for item in trends:
+        item["width"] = max(4, round(100 * item["requests"] / max_trend))
+
+    busiest_day = database.execute(
+        """
+        SELECT strftime('%w', appointment_date) AS weekday, COUNT(*) AS count
+        FROM appointments
+        WHERE appointment_date BETWEEN ? AND ?
+        GROUP BY weekday
+        ORDER BY count DESC, weekday ASC
+        LIMIT 1
+        """,
+        appointment_params,
+    ).fetchone()
+    busiest_time = database.execute(
+        """
+        SELECT appointment_time, COUNT(*) AS count
+        FROM appointments
+        WHERE appointment_date BETWEEN ? AND ?
+        GROUP BY appointment_time
+        ORDER BY count DESC, appointment_time ASC
+        LIMIT 1
+        """,
+        appointment_params,
+    ).fetchone()
+    weekday_names = {"0": "Sunday", "1": "Monday", "2": "Tuesday", "3": "Wednesday", "4": "Thursday", "5": "Friday", "6": "Saturday"}
+
+    return {
+        "start_date": start_date,
+        "end_date": end_date,
+        "trend": trend,
+        "requests_received": requests_received,
+        "appointments_scheduled": appointments_scheduled,
+        "served": served,
+        "cancelled": cancelled,
+        "no_shows": no_shows,
+        "completed_service_rate": completed_service_rate,
+        "approval_rate": approval_rate,
+        "cancellation_rate": cancellation_rate,
+        "no_show_rate": no_show_rate,
+        "average_wait_hours": average_wait_hours,
+        "by_status": by_status,
+        "by_category": by_category,
+        "by_barangay": by_barangay,
+        "trends": trends,
+        "busiest_day": weekday_names.get(busiest_day["weekday"], "No data") if busiest_day else "No data",
+        "busiest_day_count": busiest_day["count"] if busiest_day else 0,
+        "busiest_time": busiest_time["appointment_time"] if busiest_time else "",
+        "busiest_time_count": busiest_time["count"] if busiest_time else 0,
+    }
+
+
+def analytics_pdf_report(analytics):
+    """Create a concise, printable analytics report for the selected date range."""
+    stream = io.BytesIO()
+    document = SimpleDocTemplate(
+        stream,
+        pagesize=A4,
+        rightMargin=16 * mm,
+        leftMargin=16 * mm,
+        topMargin=16 * mm,
+        bottomMargin=16 * mm,
+    )
+    styles = getSampleStyleSheet()
+    story = [
+        Paragraph("SmileCare Analytics Report", styles["Title"]),
+        Paragraph(
+            f"Period: {analytics['start_date']} to {analytics['end_date']} | Trend: {analytics['trend'].title()}",
+            styles["Normal"],
+        ),
+        Spacer(1, 6 * mm),
+    ]
+    metrics = [
+        ["Metric", "Value"],
+        ["Requests received", str(analytics["requests_received"])],
+        ["Appointments scheduled", str(analytics["appointments_scheduled"])],
+        ["Clients served", str(analytics["served"])],
+        ["Cancelled", str(analytics["cancelled"])],
+        ["No-shows", str(analytics["no_shows"])],
+        ["Approval rate", f"{analytics['approval_rate']}%"],
+        ["Completed-service rate", f"{analytics['completed_service_rate']}%"],
+        ["Cancellation rate", f"{analytics['cancellation_rate']}%"],
+        ["No-show rate", f"{analytics['no_show_rate']}%"],
+        ["Average request-to-schedule time", f"{analytics['average_wait_hours'] if analytics['average_wait_hours'] is not None else 'No data'} hours"],
+        ["Busiest day", f"{analytics['busiest_day']} ({analytics['busiest_day_count']})"],
+        ["Busiest time", f"{format_time(analytics['busiest_time']) if analytics['busiest_time'] else 'No data'} ({analytics['busiest_time_count']})"],
+    ]
+    metric_table = Table(metrics, colWidths=[95 * mm, 75 * mm])
+    metric_table.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#167B68")),
+        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+        ("GRID", (0, 0), (-1, -1), 0.25, colors.HexColor("#D9E5E1")),
+        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#EDF7F4")]),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("TOPPADDING", (0, 0), (-1, -1), 6),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+    ]))
+    story.extend([metric_table, Spacer(1, 7 * mm), Paragraph("Trend", styles["Heading2"])])
+    trend_rows = [["Period", "Requests", "Served"]] + [
+        [item["bucket"], str(item["requests"]), str(item["served"])] for item in analytics["trends"]
+    ]
+    if len(trend_rows) == 1:
+        trend_rows.append(["No data", "0", "0"])
+    trend_table = Table(trend_rows, colWidths=[80 * mm, 45 * mm, 45 * mm])
+    trend_table.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#173B3A")),
+        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+        ("GRID", (0, 0), (-1, -1), 0.25, colors.HexColor("#D9E5E1")),
+        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#EDF7F4")]),
+        ("ALIGN", (1, 1), (-1, -1), "RIGHT"),
+        ("TOPPADDING", (0, 0), (-1, -1), 6),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+    ]))
+    story.append(trend_table)
+    document.build(story)
+    stream.seek(0)
+    return stream
 
 
 def generate_request_code():
@@ -502,6 +778,7 @@ def logout():
 def dashboard():
     today = date.today().isoformat()
     database = db()
+    start_date, end_date, trend = analytics_range()
 
     totals = {
         "all": (
@@ -543,50 +820,7 @@ def dashboard():
         (today,),
     ).fetchall()
 
-    analytics = {
-        "by_status": database.execute(
-            """
-            SELECT status, COUNT(*) AS count
-            FROM appointments
-            GROUP BY status
-            ORDER BY count DESC
-            """
-        ).fetchall(),
-        "by_category": database.execute(
-            """
-            SELECT category, COUNT(*) AS count
-            FROM appointments
-            GROUP BY category
-            ORDER BY count DESC
-            """
-        ).fetchall(),
-        "by_barangay": database.execute(
-            """
-            SELECT barangay, COUNT(*) AS count
-            FROM appointments
-            GROUP BY barangay
-            ORDER BY count DESC
-            LIMIT 5
-            """
-        ).fetchall(),
-        "this_month": database.execute(
-            """
-            SELECT COUNT(*)
-            FROM appointments
-            WHERE strftime('%Y-%m', appointment_date) = strftime('%Y-%m', 'now')
-            """
-        ).fetchone()[0],
-        "approval_rate": database.execute(
-            """
-            SELECT ROUND(
-                100.0 * SUM(CASE WHEN status IN ('Approved', 'Finished') THEN 1 ELSE 0 END)
-                / NULLIF(COUNT(*), 0),
-                1
-            )
-            FROM appointments
-            """
-        ).fetchone()[0] or 0,
-    }
+    analytics = build_analytics(start_date, end_date, trend)
 
     return render_template(
         "dashboard.html",
@@ -595,6 +829,57 @@ def dashboard():
         daily=daily,
         analytics=analytics,
         today=today,
+    )
+
+
+@app.get("/admin/analytics/export.csv")
+@roles_required("admin")
+def export_analytics_csv():
+    start_date, end_date, trend = analytics_range()
+    analytics = build_analytics(start_date, end_date, trend)
+    stream = io.StringIO()
+    writer = csv.writer(stream)
+    writer.writerow(["SmileCare Analytics Report"])
+    writer.writerow(["Date range", f"{start_date} to {end_date}"])
+    writer.writerow(["Trend grouping", trend.title()])
+    writer.writerow([])
+    writer.writerow(["Metric", "Value"])
+    writer.writerows([
+        ["Requests received", analytics["requests_received"]],
+        ["Appointments scheduled", analytics["appointments_scheduled"]],
+        ["Clients served", analytics["served"]],
+        ["Cancelled", analytics["cancelled"]],
+        ["No-shows", analytics["no_shows"]],
+        ["Approval rate", f"{analytics['approval_rate']}%"],
+        ["Completed-service rate", f"{analytics['completed_service_rate']}%"],
+        ["Cancellation rate", f"{analytics['cancellation_rate']}%"],
+        ["No-show rate", f"{analytics['no_show_rate']}%"],
+        ["Average request-to-schedule time (hours)", analytics["average_wait_hours"] if analytics["average_wait_hours"] is not None else "No data"],
+        ["Busiest day", analytics["busiest_day"]],
+        ["Busiest time", format_time(analytics["busiest_time"]) if analytics["busiest_time"] else "No data"],
+    ])
+    writer.writerow([])
+    writer.writerow(["Trend period", "Requests received", "Clients served"])
+    for item in analytics["trends"]:
+        writer.writerow([item["bucket"], item["requests"], item["served"]])
+    filename = f"smilecare-analytics-{start_date}-to-{end_date}.csv"
+    return Response(
+        stream.getvalue(),
+        mimetype="text/csv",
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
+    )
+
+
+@app.get("/admin/analytics/export.pdf")
+@roles_required("admin")
+def export_analytics_pdf():
+    start_date, end_date, trend = analytics_range()
+    report = analytics_pdf_report(build_analytics(start_date, end_date, trend))
+    filename = f"smilecare-analytics-{start_date}-to-{end_date}.pdf"
+    return Response(
+        report.getvalue(),
+        mimetype="application/pdf",
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
     )
 
 @app.route("/admin/accounts", methods=["GET", "POST"])
@@ -871,7 +1156,7 @@ def schedule_request(request_id):
             updated = database.execute(
                 """
                 UPDATE client_requests
-                SET status='Scheduled', scheduled_appointment_id=?
+                SET status='Scheduled', scheduled_appointment_id=?, scheduled_at=CURRENT_TIMESTAMP
                 WHERE id=? AND status='Waiting for schedule'
                 """,
                 (cursor.lastrowid, request_id),

@@ -51,6 +51,23 @@ button, .button-link { border: 0; border-radius: 7px; background: var(--green); 
 .stats span { display: block; color: #58706d; font-size: 13px; }
 .stats b { display: block; font-size: 34px; margin-top: 2px; }
 .dashboard-grid { display: grid; grid-template-columns: 1.6fr 1fr; gap: 22px; }
+.analytics-card { margin-top: 22px; }
+.analytics-card .page-title { margin-bottom: 12px; }
+.analytics-card .page-title h2 { margin-bottom: 0; }
+.analytics-filters { margin: 0 0 20px; }
+.analytics-stats { margin-bottom: 16px; }
+.analytics-stats > div { background: #f7faf9; }
+.analytics-stats b { font-size: 27px; }
+.export-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.export-actions .button-link { margin: 0; }
+.analytics-highlights { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; margin: 18px 0; }
+.analytics-highlights > div { border: 1px solid var(--line); border-radius: 10px; padding: 14px; }
+.analytics-highlights span { display: block; color: #58706d; font-size: 12px; }
+.analytics-highlights strong { display: block; margin-top: 3px; }
+.analytics-detail-grid { grid-template-columns: 1.4fr 1fr 1fr; }
+.trend-row { display: grid; grid-template-columns: 92px 1fr auto; gap: 8px; align-items: center; margin: 12px 0; font-size: 12px; }
+.trend-row > div { height: 9px; background: #e5eeeb; border-radius: 5px; overflow: hidden; min-width: 70px; }
+.trend-row i { display: block; height: 100%; background: var(--green); }
 table { width: 100%; border-collapse: collapse; font-size: 14px; }
 th { text-align: left; color: #6a807d; font-size: 12px; }
 td, th { padding: 11px 8px; border-bottom: 1px solid var(--line); }
@@ -106,10 +123,11 @@ dialog::backdrop { background: #0f292680; }
 
 @media (max-width: 760px) {
   main { padding: 30px 16px; }
-  .form-grid, .dashboard-grid, .week-grid { grid-template-columns: 1fr; }
+  .form-grid, .dashboard-grid, .analytics-detail-grid, .week-grid { grid-template-columns: 1fr; }
   .stats { grid-template-columns: repeat(2, 1fr); }
   .page-title { align-items: start; gap: 16px; flex-direction: column; }
   .filters { align-items: stretch; flex-direction: column; }
+  .analytics-highlights { grid-template-columns: 1fr; }
   nav { gap: 12px; }
   .card { padding: 20px; }
   .week-navigation strong { font-size: 12px; text-align: center; }
