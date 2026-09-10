@@ -85,6 +85,10 @@ class CompatibleRow(dict):
 
 
 def postgres_row_factory(cursor):
+    # Commands such as SET TIME ZONE do not return columns. Psycopg still
+    # invokes the configured row factory, so return a harmless row maker.
+    if cursor.description is None:
+        return lambda values: values
     columns = [column.name for column in cursor.description]
     return lambda values: CompatibleRow(zip(columns, values))
 
