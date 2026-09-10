@@ -5,8 +5,8 @@
     <p class="eyebrow">REQUEST RECEIVED</p>
     <h1>Thank you, {{ client_request.first_name }}.</h1>
     <p>Your request has been sent to the clinic scheduler. The clinic will contact you with your appointment schedule.</p>
-    <p>Your request reference is: <strong>{{ client_request.request_code }}</strong></p>
-    <p class="notice">Keep this reference number for future follow-up.</p>
+    <p><strong>Submitted:</strong> {{ client_request.submitted_at }}</p>
+    <p class="notice">Requests are handled in the order they are submitted. The clinic will contact you with your appointment schedule.</p>
     <a class="button-link" href="{{ url_for('request_appointment') }}">Make another request</a>
   </section>
 {% endblock %}

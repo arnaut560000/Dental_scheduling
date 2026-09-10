@@ -359,7 +359,7 @@ def request_appointment():
             )
         else:
             fields["request_code"] = generate_request_code()
-            db().execute(
+            cursor = db().execute(
                 """
                 INSERT INTO client_requests (
                     request_code, last_name, first_name, middle_initial, birth_date,
@@ -372,6 +372,10 @@ def request_appointment():
                 fields,
             )
             db().commit()
+            fields["submitted_at"] = db().execute(
+                "SELECT created_at FROM client_requests WHERE id=?",
+                (cursor.lastrowid,),
+            ).fetchone()[0]
             return render_template("success.html", client_request=fields)
 
     return render_template(
@@ -687,7 +691,7 @@ def reset_staff_password(user_id):
     return redirect(url_for("accounts"))
 
 
-@app.route("/admin/requests/<int:request_id>/schedule", methods=["GET", "POST"])
+@app.post("/admin/requests/<int:request_id>/schedule")
 @roles_required("admin", "scheduler")
 def schedule_request(request_id):
     client_request = db().execute(
@@ -703,100 +707,92 @@ def schedule_request(request_id):
         flash("This client request is no longer waiting for a schedule.", "error")
         return redirect(url_for("appointments"))
 
-    if request.method == "POST":
-        appointment_date = request.form.get("appointment_date", "")
-        appointment_time = request.form.get("appointment_time", "")
+    appointment_date = request.form.get("appointment_date", "")
+    appointment_time = request.form.get("appointment_time", "")
 
-        if not valid_clinic_date(appointment_date):
-            flash("Choose a future Monday, Wednesday, or Friday.", "error")
-        elif appointment_time not in available_slots(appointment_date):
-            flash("That time is no longer available. Choose another.", "error")
-        else:
-            database = db()
+    if not valid_clinic_date(appointment_date):
+        flash("Choose a future Monday, Wednesday, or Friday.", "error")
+    elif appointment_time not in available_slots(appointment_date):
+        flash("That time is no longer available. Choose another.", "error")
+    else:
+        database = db()
 
-            try:
-                database.execute("BEGIN IMMEDIATE")
-                fresh_request = database.execute(
-                    """
-                    SELECT *
-                    FROM client_requests
-                    WHERE id=? AND status='Waiting for schedule'
-                    """,
-                    (request_id,),
-                ).fetchone()
+        try:
+            database.execute("BEGIN IMMEDIATE")
+            fresh_request = database.execute(
+                """
+                SELECT *
+                FROM client_requests
+                WHERE id=? AND status='Waiting for schedule'
+                """,
+                (request_id,),
+            ).fetchone()
 
-                if not fresh_request:
-                    database.rollback()
-                    flash("This request was already scheduled.", "error")
-                    return redirect(url_for("appointments"))
-
-                count = database.execute(
-                    "SELECT COUNT(*) FROM appointments WHERE appointment_date=?",
-                    (appointment_date,),
-                ).fetchone()[0]
-
-                if count >= MAX_PER_DAY:
-                    database.rollback()
-                    flash("This day has reached its client limit.", "error")
-                    return redirect(url_for("schedule_request", request_id=request_id))
-
-                cursor = database.execute(
-                    """
-                    INSERT INTO appointments (
-                        last_name, first_name, middle_initial, birth_date, barangay,
-                        category, contact_number, contact_key, email, appointment_date,
-                        appointment_time, status
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Approved')
-                    """,
-                    (
-                        fresh_request["last_name"],
-                        fresh_request["first_name"],
-                        fresh_request["middle_initial"],
-                        fresh_request["birth_date"],
-                        fresh_request["barangay"],
-                        fresh_request["category"],
-                        fresh_request["contact_number"],
-                        fresh_request["contact_key"],
-                        fresh_request["email"],
-                        appointment_date,
-                        appointment_time,
-                    ),
-                )
-
-                updated = database.execute(
-                    """
-                    UPDATE client_requests
-                    SET status='Scheduled', scheduled_appointment_id=?
-                    WHERE id=? AND status='Waiting for schedule'
-                    """,
-                    (cursor.lastrowid, request_id),
-                )
-
-                if updated.rowcount != 1:
-                    database.rollback()
-                    flash("This request was already scheduled.", "error")
-                    return redirect(url_for("appointments"))
-
-                audit(
-                    "client_scheduled",
-                    appointment_id=cursor.lastrowid,
-                    details=(
-                        f"request={fresh_request['request_code']}; "
-                        f"date={appointment_date}; time={appointment_time}"
-                    ),
-                )
-                database.commit()
-                flash("Client schedule assigned successfully.", "success")
-                return redirect(url_for("appointments"))
-            except sqlite3.IntegrityError:
+            if not fresh_request:
                 database.rollback()
-                flash("That time was just taken. Choose another.", "error")
+                flash("This request was already scheduled.", "error")
+                return redirect(url_for("appointments"))
 
-    return render_template(
-        "schedule_request.html",
-        client_request=client_request,
-        min_date=date.today().isoformat(),
-    )
+            count = database.execute(
+                "SELECT COUNT(*) FROM appointments WHERE appointment_date=?",
+                (appointment_date,),
+            ).fetchone()[0]
+
+            if count >= MAX_PER_DAY:
+                database.rollback()
+                flash("This day has reached its client limit.", "error")
+                return redirect(url_for("appointments"))
+
+            cursor = database.execute(
+                """
+                INSERT INTO appointments (
+                    last_name, first_name, middle_initial, birth_date, barangay,
+                    category, contact_number, contact_key, email, appointment_date,
+                    appointment_time, status
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Approved')
+                """,
+                (
+                    fresh_request["last_name"],
+                    fresh_request["first_name"],
+                    fresh_request["middle_initial"],
+                    fresh_request["birth_date"],
+                    fresh_request["barangay"],
+                    fresh_request["category"],
+                    fresh_request["contact_number"],
+                    fresh_request["contact_key"],
+                    fresh_request["email"],
+                    appointment_date,
+                    appointment_time,
+                ),
+            )
+
+            updated = database.execute(
+                """
+                UPDATE client_requests
+                SET status='Scheduled', scheduled_appointment_id=?
+                WHERE id=? AND status='Waiting for schedule'
+                """,
+                (cursor.lastrowid, request_id),
+            )
+
+            if updated.rowcount != 1:
+                database.rollback()
+                flash("This request was already scheduled.", "error")
+                return redirect(url_for("appointments"))
+
+            audit(
+                "client_scheduled",
+                appointment_id=cursor.lastrowid,
+                details=f"client_request_id={request_id}; date={appointment_date}; time={appointment_time}",
+            )
+            database.commit()
+            flash("Client schedule assigned successfully.", "success")
+            return redirect(url_for("appointments"))
+        except sqlite3.IntegrityError:
+            database.rollback()
+            flash("That time was just taken. Choose another.", "error")
+
+    return redirect(url_for("appointments"))
 
 
 @app.get("/admin/appointments")
@@ -816,7 +812,7 @@ def appointments():
         SELECT *
         FROM client_requests
         WHERE status='Waiting for schedule'
-        ORDER BY created_at ASC
+        ORDER BY datetime(created_at) ASC, id ASC
         """
     ).fetchall()
     return render_template(
@@ -855,7 +851,7 @@ def notifications():
     """New client requests this staff member hasn't seen yet, newest last."""
     rows = db().execute(
         """
-        SELECT id, request_code, last_name, first_name, middle_initial, category,
+        SELECT id, last_name, first_name, middle_initial, category,
                barangay, contact_number, created_at
         FROM client_requests
         WHERE id > ?
@@ -868,7 +864,6 @@ def notifications():
         "requests": [
             {
                 "id": row["id"],
-                "request_code": row["request_code"],
                 "name": f'{row["last_name"]}, {row["first_name"]} {row["middle_initial"] or ""}'.strip(),
                 "category": row["category"],
                 "barangay": row["barangay"],

@@ -12,19 +12,27 @@
 
   <section class="card table-card">
     <h2>Waiting for schedule</h2>
+    <p class="notice">Clients are listed by submission time. Schedule the earliest request first.</p>
     {% if waiting_requests %}
       <table class="wide">
         <thead>
-          <tr><th>Reference</th><th>Client</th><th>Details</th><th>Contact</th><th>Action</th></tr>
+          <tr><th>Submitted</th><th>Client</th><th>Details</th><th>Contact</th><th>Action</th></tr>
         </thead>
         <tbody>
           {% for client_request in waiting_requests %}
             <tr>
-              <td><strong>{{ client_request.request_code }}</strong></td>
+              <td><strong>{{ client_request.created_at }}</strong><br><span class="notice">Queue #{{ loop.index }}</span></td>
               <td><strong>{{ client_request.last_name }}, {{ client_request.first_name }} {{ client_request.middle_initial }}</strong><br>{{ client_request.birth_date }}</td>
               <td>{{ client_request.barangay }}<br>{{ client_request.category }}</td>
               <td>{{ client_request.contact_number }}<br>{{ client_request.email }}</td>
-              <td><a class="button-link small" href="{{ url_for('schedule_request', request_id=client_request.id) }}">Schedule</a></td>
+              <td>
+                <button
+                  class="small schedule-button"
+                  type="button"
+                  data-request-id="{{ client_request.id }}"
+                  data-client-name="{{ client_request.last_name }}, {{ client_request.first_name }} {{ client_request.middle_initial or '' }}"
+                >Schedule</button>
+              </td>
             </tr>
           {% endfor %}
         </tbody>
@@ -33,6 +41,34 @@
       <p class="empty">No clients are waiting for a schedule.</p>
     {% endif %}
   </section>
+
+  <dialog id="schedule-modal" aria-labelledby="schedule-heading">
+    <div class="modal-header">
+      <div>
+        <p class="eyebrow">SCHEDULER</p>
+        <h2 id="schedule-heading">Assign client schedule</h2>
+        <p id="schedule-client" class="notice"></p>
+      </div>
+      <button class="close-modal" id="schedule-close" type="button" aria-label="Close">×</button>
+    </div>
+    <form id="schedule-form" method="post" class="appointment-form">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="form-grid">
+        <label>
+          Appointment date
+          <input id="schedule-date" type="date" name="appointment_date" min="{{ today }}" required>
+        </label>
+        <label>
+          Available time
+          <select id="schedule-time" name="appointment_time" required disabled>
+            <option value="">Choose a date first</option>
+          </select>
+        </label>
+      </div>
+      <p id="schedule-help" class="notice">Choose a future Monday, Wednesday, or Friday.</p>
+      <button type="submit">Assign schedule</button>
+    </form>
+  </dialog>
 
   <form class="filters card" method="get">
     <label>Date<input type="date" name="date" value="{{ selected_date }}"></label>
@@ -85,4 +121,77 @@
       <p class="empty">No scheduled clients match this filter.</p>
     {% endif %}
   </section>
+{% endblock %}
+
+{% block scripts %}
+  <script>
+    (function () {
+      const modal = document.getElementById('schedule-modal');
+      const closeButton = document.getElementById('schedule-close');
+      const form = document.getElementById('schedule-form');
+      const clientLabel = document.getElementById('schedule-client');
+      const dateInput = document.getElementById('schedule-date');
+      const timeSelect = document.getElementById('schedule-time');
+      const helpText = document.getElementById('schedule-help');
+
+      function formatTime(value) {
+        return new Date(`2000-01-01T${value}`).toLocaleTimeString([], {
+          hour: 'numeric', minute: '2-digit'
+        });
+      }
+
+      async function loadAvailableTimes() {
+        const selectedDate = dateInput.value;
+        timeSelect.disabled = true;
+        timeSelect.innerHTML = '<option value="">Loading available times...</option>';
+
+        if (!selectedDate) {
+          timeSelect.innerHTML = '<option value="">Choose a date first</option>';
+          return;
+        }
+
+        try {
+          const response = await fetch(`{{ url_for('slots') }}?date=${encodeURIComponent(selectedDate)}`);
+          const data = await response.json();
+          helpText.textContent = data.message || '';
+          const availableSlots = (data.slots || []).filter(function (slot) {
+            return slot.state === 'available';
+          });
+
+          if (!response.ok || !availableSlots.length) {
+            timeSelect.innerHTML = '<option value="">No available times</option>';
+            return;
+          }
+
+          timeSelect.innerHTML = '<option value="">Choose a time</option>';
+          availableSlots.forEach(function (slot) {
+            const option = document.createElement('option');
+            option.value = slot.time;
+            option.textContent = formatTime(slot.time);
+            timeSelect.appendChild(option);
+          });
+          timeSelect.disabled = false;
+        } catch (error) {
+          timeSelect.innerHTML = '<option value="">Could not load times</option>';
+          helpText.textContent = 'Please try choosing the date again.';
+        }
+      }
+
+      document.querySelectorAll('.schedule-button').forEach(function (button) {
+        button.addEventListener('click', function () {
+          form.action = `/admin/requests/${button.dataset.requestId}/schedule`;
+          clientLabel.textContent = button.dataset.clientName.trim();
+          dateInput.value = '';
+          timeSelect.disabled = true;
+          timeSelect.innerHTML = '<option value="">Choose a date first</option>';
+          helpText.textContent = 'Choose a future Monday, Wednesday, or Friday.';
+          modal.showModal();
+        });
+      });
+
+      dateInput.addEventListener('change', loadAvailableTimes);
+      closeButton.addEventListener('click', function () { modal.close(); });
+      modal.addEventListener('cancel', function () { modal.close(); });
+    })();
+  </script>
 {% endblock %}
