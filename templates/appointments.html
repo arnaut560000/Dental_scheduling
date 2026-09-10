@@ -1,13 +1,38 @@
 {% extends 'base.html' %}
 
-{% block title %}Scheduled Clients · SmileCare{% endblock %}
+{% block title %}Clients · SmileCare{% endblock %}
+
 {% block content %}
   <div class="page-title">
     <div>
       <p class="eyebrow">CLIENT MANAGEMENT</p>
-      <h1>Scheduled clients</h1>
+      <h1>Clients</h1>
     </div>
   </div>
+
+  <section class="card table-card">
+    <h2>Waiting for schedule</h2>
+    {% if waiting_requests %}
+      <table class="wide">
+        <thead>
+          <tr><th>Reference</th><th>Client</th><th>Details</th><th>Contact</th><th>Action</th></tr>
+        </thead>
+        <tbody>
+          {% for client_request in waiting_requests %}
+            <tr>
+              <td><strong>{{ client_request.request_code }}</strong></td>
+              <td><strong>{{ client_request.last_name }}, {{ client_request.first_name }} {{ client_request.middle_initial }}</strong><br>{{ client_request.birth_date }}</td>
+              <td>{{ client_request.barangay }}<br>{{ client_request.category }}</td>
+              <td>{{ client_request.contact_number }}<br>{{ client_request.email }}</td>
+              <td><a class="button-link small" href="{{ url_for('schedule_request', request_id=client_request.id) }}">Schedule</a></td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <p class="empty">No clients are waiting for a schedule.</p>
+    {% endif %}
+  </section>
 
   <form class="filters card" method="get">
     <label>Date<input type="date" name="date" value="{{ selected_date }}"></label>
@@ -15,22 +40,23 @@
       Status
       <select name="status">
         <option value="">All statuses</option>
-        {% for item in ['Pending', 'Approved', 'Finished'] %}
+        {% for item in ['Approved', 'Finished'] %}
           <option value="{{ item }}" {% if selected_status == item %}selected{% endif %}>{{ item }}</option>
         {% endfor %}
       </select>
     </label>
-    <button>Filter</button>
-    {% if selected_date %}
+    <button>Filter scheduled clients</button>
+    {% if selected_date and session.role == 'admin' %}
       <a class="button-link secondary" href="{{ url_for('export_day', date=selected_date) }}">Export this day</a>
     {% endif %}
   </form>
 
   <section class="card table-card">
+    <h2>Scheduled clients</h2>
     {% if appointments %}
       <table class="wide">
         <thead>
-          <tr><th>Schedule</th><th>Client</th><th>Details</th><th>Contact</th><th>Approval</th></tr>
+          <tr><th>Schedule</th><th>Client</th><th>Details</th><th>Contact</th><th>Status</th></tr>
         </thead>
         <tbody>
           {% for appointment in appointments %}
@@ -41,13 +67,7 @@
               <td>{{ appointment.contact_number }}<br>{{ appointment.email }}</td>
               <td>
                 <span class="badge {{ appointment.status|lower }}">{{ appointment.status }}</span>
-                {% if appointment.status == 'Pending' %}
-                  <form method="post" action="{{ url_for('set_status', appointment_id=appointment.id) }}">
-                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                    <input type="hidden" name="status" value="Approved">
-                    <button class="small approve">Approve request</button>
-                  </form>
-                {% elif appointment.status == 'Approved' %}
+                {% if appointment.status == 'Approved' %}
                   <form method="post" action="{{ url_for('set_status', appointment_id=appointment.id) }}">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     <input type="hidden" name="status" value="Finished">
@@ -62,7 +82,7 @@
         </tbody>
       </table>
     {% else %}
-      <p class="empty">No clients match this filter.</p>
+      <p class="empty">No scheduled clients match this filter.</p>
     {% endif %}
   </section>
 {% endblock %}

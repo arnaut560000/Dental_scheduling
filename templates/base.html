@@ -91,7 +91,8 @@
                     '<span class="badge">' + escapeHtml(item.category) + '</span>' +
                   '</div>' +
                   '<p>' + escapeHtml(item.barangay) + ' &middot; ' + escapeHtml(item.contact_number) + '</p>' +
-                  '<p><strong>Requested:</strong> ' + escapeHtml(item.appointment_date) + ' at ' + escapeHtml(item.appointment_time) + '</p>' +
+                  '<p><strong>Reference:</strong> ' + escapeHtml(item.request_code) + '</p>' +
+                  '<p><strong>Status:</strong> Waiting for scheduler assignment</p>' +
                   '<small>Submitted ' + escapeHtml(item.submitted_at) + '</small>' +
                 '</article>'
               );

@@ -2,6 +2,7 @@ import csv
 import io
 import os
 import re
+import secrets
 import sqlite3
 from datetime import date, datetime, timedelta
 from functools import wraps
@@ -90,6 +91,26 @@ def init_db():
             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
             UNIQUE(appointment_date, appointment_time)
         );
+        CREATE TABLE IF NOT EXISTS client_requests (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            request_code TEXT NOT NULL UNIQUE,
+            last_name TEXT NOT NULL,
+            first_name TEXT NOT NULL,
+            middle_initial TEXT,
+            birth_date TEXT NOT NULL,
+            barangay TEXT NOT NULL,
+            category TEXT NOT NULL,
+            contact_number TEXT NOT NULL,
+            contact_key TEXT NOT NULL,
+            email TEXT,
+            status TEXT NOT NULL DEFAULT 'Waiting for schedule',
+            scheduled_appointment_id INTEGER UNIQUE,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE INDEX IF NOT EXISTS idx_client_requests_status
+        ON client_requests (status);
+        CREATE INDEX IF NOT EXISTS idx_client_requests_contact_key
+        ON client_requests (contact_key);
         CREATE TABLE IF NOT EXISTS audit_events (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id INTEGER,
@@ -219,6 +240,24 @@ def audit(action, appointment_id=None, target_user_id=None, details=None):
     )
 
 
+def generate_request_code():
+    alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+
+    for _ in range(10):
+        suffix = "".join(secrets.choice(alphabet) for _ in range(6))
+        request_code = f"REQ-{date.today():%Y%m%d}-{suffix}"
+
+        existing = db().execute(
+            "SELECT 1 FROM client_requests WHERE request_code=?",
+            (request_code,),
+        ).fetchone()
+
+        if not existing:
+            return request_code
+
+    raise RuntimeError("Could not generate a unique client request reference.")
+
+
 @app.errorhandler(CSRFError)
 def handle_csrf_error(_error):
     flash("Your form expired. Please try again.", "error")
@@ -283,68 +322,66 @@ def request_appointment():
             key: request.form.get(key, "").strip()
             for key in [
                 "last_name", "first_name", "middle_initial", "birth_date", "barangay",
-                "category", "contact_number", "email", "appointment_date", "appointment_time",
+                "category", "contact_number", "email",
             ]
         }
         required = [
             "last_name", "first_name", "birth_date", "barangay", "category",
-            "contact_number", "appointment_date", "appointment_time",
+            "contact_number",
         ]
         fields["contact_key"] = normalize_contact(fields["contact_number"])
-        if any(not fields[name] for name in required) or not valid_clinic_date(fields["appointment_date"]):
-            flash("Complete all required fields and select a future Monday, Wednesday, or Friday.", "error")
+        recent_request = db().execute(
+            """
+            SELECT 1
+            FROM client_requests
+            WHERE contact_key=? AND datetime(created_at) >= datetime('now', ?)
+            """,
+            (fields["contact_key"], f"-{REQUEST_COOLDOWN_DAYS} days"),
+        ).fetchone()
+        recent_appointment = db().execute(
+            """
+            SELECT 1
+            FROM appointments
+            WHERE contact_key=? AND datetime(created_at) >= datetime('now', ?)
+            """,
+            (fields["contact_key"], f"-{REQUEST_COOLDOWN_DAYS} days"),
+        ).fetchone()
+
+        if any(not fields[name] for name in required):
+            flash("Complete all required fields.", "error")
         elif len(fields["contact_key"]) < 7:
             flash("Please enter a valid contact number.", "error")
-        elif db().execute(
-            "SELECT 1 FROM appointments WHERE contact_key=? AND datetime(created_at) >= datetime('now', ?)",
-            (fields["contact_key"], f"-{REQUEST_COOLDOWN_DAYS} days"),
-        ).fetchone():
+        elif recent_request or recent_appointment:
             flash(
                 f"A request using this contact number was already submitted within the last "
                 f"{REQUEST_COOLDOWN_DAYS} days. Please contact the clinic for assistance.",
                 "error",
             )
-        elif fields["appointment_time"] not in available_slots(fields["appointment_date"]):
-            flash("That schedule was just taken. Please select another available time.", "error")
         else:
-            count = db().execute(
-                "SELECT COUNT(*) FROM appointments WHERE appointment_date = ?",
-                (fields["appointment_date"],),
-            ).fetchone()[0]
-            if count >= MAX_PER_DAY:
-                flash("This day has reached its 15-client limit. Please choose another date.", "error")
-            else:
-                try:
-                    db().execute(
-                        """
-                        INSERT INTO appointments (
-                            last_name, first_name, middle_initial, birth_date, barangay,
-                            category, contact_number, contact_key, email, appointment_date,
-                            appointment_time
-                        ) VALUES (
-                            :last_name, :first_name, :middle_initial, :birth_date, :barangay,
-                            :category, :contact_number, :contact_key, :email, :appointment_date,
-                            :appointment_time
-                        )
-                        """,
-                        fields,
-                    )
-                    db().commit()
-                    return render_template("success.html", appointment=fields)
-                except sqlite3.IntegrityError:
-                    flash("That slot is no longer available. Please choose another.", "error")
-    default_date = request.args.get("date", "")
+            fields["request_code"] = generate_request_code()
+            db().execute(
+                """
+                INSERT INTO client_requests (
+                    request_code, last_name, first_name, middle_initial, birth_date,
+                    barangay, category, contact_number, contact_key, email
+                ) VALUES (
+                    :request_code, :last_name, :first_name, :middle_initial, :birth_date,
+                    :barangay, :category, :contact_number, :contact_key, :email
+                )
+                """,
+                fields,
+            )
+            db().commit()
+            return render_template("success.html", client_request=fields)
+
     return render_template(
         "request.html",
-        slots=available_slots(default_date) if valid_clinic_date(default_date) else [],
-        selected_date=default_date,
-        min_date=date.today().isoformat(),
-        max_per_day=MAX_PER_DAY,
         cooldown_days=REQUEST_COOLDOWN_DAYS,
     )
 
 
 @app.get("/slots")
+@roles_required("admin", "scheduler")
 def slots():
     selected = request.args.get("date", "")
     if not valid_clinic_date(selected):
@@ -354,35 +391,6 @@ def slots():
     if booked_count >= MAX_PER_DAY:
         message = "This day has reached the 15-client limit. Please choose another date."
     return {"slots": schedule, "count": booked_count, "max": MAX_PER_DAY, "message": message}
-
-
-@app.get("/week-slots")
-def week_slots():
-    """Provide all public slots for the Monday/Wednesday/Friday clinic week."""
-    requested = request.args.get("week", "")
-    try:
-        week_start = monday_for(requested) if requested else monday_for(date.today().isoformat())
-    except ValueError:
-        return {"message": "Invalid week."}, 400
-    if not requested and week_start + timedelta(days=4) < date.today():
-        week_start += timedelta(days=7)
-
-    clinic_week = []
-    for offset, label in ((0, "Monday"), (2, "Wednesday"), (4, "Friday")):
-        clinic_day = week_start + timedelta(days=offset)
-        if clinic_day < date.today():
-            slot_list = [{"time": slot, "state": "unavailable"} for slot in SLOT_TIMES]
-            count = MAX_PER_DAY
-        else:
-            slot_list, count = day_schedule(clinic_day.isoformat())
-        clinic_week.append({
-            "label": label,
-            "date": clinic_day.isoformat(),
-            "display_date": clinic_day.strftime("%b %d"),
-            "slots": slot_list,
-            "count": count,
-        })
-    return {"week": week_start.isoformat(), "days": clinic_week, "max": MAX_PER_DAY}
 
 
 @app.route("/admin/login", methods=["GET", "POST"])
@@ -425,11 +433,12 @@ def dashboard():
     database = db()
 
     totals = {
-        "all": database.execute(
-            "SELECT COUNT(*) FROM appointments"
-        ).fetchone()[0],
+        "all": (
+            database.execute("SELECT COUNT(*) FROM client_requests").fetchone()[0]
+            + database.execute("SELECT COUNT(*) FROM appointments").fetchone()[0]
+        ),
         "pending": database.execute(
-            "SELECT COUNT(*) FROM appointments WHERE status='Pending'"
+            "SELECT COUNT(*) FROM client_requests WHERE status='Waiting for schedule'"
         ).fetchone()[0],
         "today": database.execute(
             "SELECT COUNT(*) FROM appointments WHERE appointment_date=?",
@@ -543,7 +552,7 @@ def accounts():
         else:
             try:
                 current_max_id = db().execute(
-                    "SELECT COALESCE(MAX(id), 0) FROM appointments"
+                    "SELECT COALESCE(MAX(id), 0) FROM client_requests"
                 ).fetchone()[0]
                 cursor = db().execute(
                     """
@@ -678,6 +687,118 @@ def reset_staff_password(user_id):
     return redirect(url_for("accounts"))
 
 
+@app.route("/admin/requests/<int:request_id>/schedule", methods=["GET", "POST"])
+@roles_required("admin", "scheduler")
+def schedule_request(request_id):
+    client_request = db().execute(
+        """
+        SELECT *
+        FROM client_requests
+        WHERE id=? AND status='Waiting for schedule'
+        """,
+        (request_id,),
+    ).fetchone()
+
+    if not client_request:
+        flash("This client request is no longer waiting for a schedule.", "error")
+        return redirect(url_for("appointments"))
+
+    if request.method == "POST":
+        appointment_date = request.form.get("appointment_date", "")
+        appointment_time = request.form.get("appointment_time", "")
+
+        if not valid_clinic_date(appointment_date):
+            flash("Choose a future Monday, Wednesday, or Friday.", "error")
+        elif appointment_time not in available_slots(appointment_date):
+            flash("That time is no longer available. Choose another.", "error")
+        else:
+            database = db()
+
+            try:
+                database.execute("BEGIN IMMEDIATE")
+                fresh_request = database.execute(
+                    """
+                    SELECT *
+                    FROM client_requests
+                    WHERE id=? AND status='Waiting for schedule'
+                    """,
+                    (request_id,),
+                ).fetchone()
+
+                if not fresh_request:
+                    database.rollback()
+                    flash("This request was already scheduled.", "error")
+                    return redirect(url_for("appointments"))
+
+                count = database.execute(
+                    "SELECT COUNT(*) FROM appointments WHERE appointment_date=?",
+                    (appointment_date,),
+                ).fetchone()[0]
+
+                if count >= MAX_PER_DAY:
+                    database.rollback()
+                    flash("This day has reached its client limit.", "error")
+                    return redirect(url_for("schedule_request", request_id=request_id))
+
+                cursor = database.execute(
+                    """
+                    INSERT INTO appointments (
+                        last_name, first_name, middle_initial, birth_date, barangay,
+                        category, contact_number, contact_key, email, appointment_date,
+                        appointment_time, status
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Approved')
+                    """,
+                    (
+                        fresh_request["last_name"],
+                        fresh_request["first_name"],
+                        fresh_request["middle_initial"],
+                        fresh_request["birth_date"],
+                        fresh_request["barangay"],
+                        fresh_request["category"],
+                        fresh_request["contact_number"],
+                        fresh_request["contact_key"],
+                        fresh_request["email"],
+                        appointment_date,
+                        appointment_time,
+                    ),
+                )
+
+                updated = database.execute(
+                    """
+                    UPDATE client_requests
+                    SET status='Scheduled', scheduled_appointment_id=?
+                    WHERE id=? AND status='Waiting for schedule'
+                    """,
+                    (cursor.lastrowid, request_id),
+                )
+
+                if updated.rowcount != 1:
+                    database.rollback()
+                    flash("This request was already scheduled.", "error")
+                    return redirect(url_for("appointments"))
+
+                audit(
+                    "client_scheduled",
+                    appointment_id=cursor.lastrowid,
+                    details=(
+                        f"request={fresh_request['request_code']}; "
+                        f"date={appointment_date}; time={appointment_time}"
+                    ),
+                )
+                database.commit()
+                flash("Client schedule assigned successfully.", "success")
+                return redirect(url_for("appointments"))
+            except sqlite3.IntegrityError:
+                database.rollback()
+                flash("That time was just taken. Choose another.", "error")
+
+    return render_template(
+        "schedule_request.html",
+        client_request=client_request,
+        min_date=date.today().isoformat(),
+    )
+
+
 @app.get("/admin/appointments")
 @roles_required("admin", "scheduler")
 def appointments():
@@ -690,9 +811,18 @@ def appointments():
         query += " AND status=?"; params.append(status)
     query += " ORDER BY appointment_date DESC, appointment_time"
     rows = db().execute(query, params).fetchall()
+    waiting_requests = db().execute(
+        """
+        SELECT *
+        FROM client_requests
+        WHERE status='Waiting for schedule'
+        ORDER BY created_at ASC
+        """
+    ).fetchall()
     return render_template(
         "appointments.html",
         appointments=rows,
+        waiting_requests=waiting_requests,
         selected_date=selected_date,
         selected_status=status,
         today=date.today().isoformat(),
@@ -725,9 +855,9 @@ def notifications():
     """New client requests this staff member hasn't seen yet, newest last."""
     rows = db().execute(
         """
-        SELECT id, last_name, first_name, middle_initial, category, barangay,
-               contact_number, appointment_date, appointment_time, created_at
-        FROM appointments
+        SELECT id, request_code, last_name, first_name, middle_initial, category,
+               barangay, contact_number, created_at
+        FROM client_requests
         WHERE id > ?
         ORDER BY id
         LIMIT 20
@@ -738,12 +868,11 @@ def notifications():
         "requests": [
             {
                 "id": row["id"],
+                "request_code": row["request_code"],
                 "name": f'{row["last_name"]}, {row["first_name"]} {row["middle_initial"] or ""}'.strip(),
                 "category": row["category"],
                 "barangay": row["barangay"],
                 "contact_number": row["contact_number"],
-                "appointment_date": row["appointment_date"],
-                "appointment_time": format_time(row["appointment_time"]),
                 "submitted_at": row["created_at"],
             }
             for row in rows

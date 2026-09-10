@@ -3,12 +3,10 @@
 {% block content %}
   <section class="card confirmation">
     <p class="eyebrow">REQUEST RECEIVED</p>
-    <h1>Thank you, {{ appointment.first_name }}.</h1>
-    <p>
-      Your request for <strong>{{ appointment.appointment_date }}</strong> at
-      <strong>{{ appointment.appointment_time|time12 }}</strong> has been sent for admin approval.
-    </p>
-    <p>Please wait for the clinic to contact you using the phone number or email you provided.</p>
+    <h1>Thank you, {{ client_request.first_name }}.</h1>
+    <p>Your request has been sent to the clinic scheduler. The clinic will contact you with your appointment schedule.</p>
+    <p>Your request reference is: <strong>{{ client_request.request_code }}</strong></p>
+    <p class="notice">Keep this reference number for future follow-up.</p>
     <a class="button-link" href="{{ url_for('request_appointment') }}">Make another request</a>
   </section>
 {% endblock %}

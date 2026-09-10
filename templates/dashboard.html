@@ -8,12 +8,14 @@
       <p class="eyebrow">ADMIN OVERVIEW</p>
       <h1>Clinic dashboard</h1>
     </div>
-    <a class="button-link" href="{{ url_for('export_day', date=today) }}">Export today’s list</a>
+    {% if session.role == 'admin' %}
+      <a class="button-link" href="{{ url_for('export_day', date=today) }}">Export today’s list</a>
+    {% endif %}
   </div>
 
   <section class="stats">
     <div><span>Total requests</span><b>{{ totals.all }}</b></div>
-    <div><span>Pending approval</span><b>{{ totals.pending }}</b></div>
+    <div><span>Waiting for schedule</span><b>{{ totals.pending }}</b></div>
     <div><span>Scheduled today</span><b>{{ totals.today }}</b></div>
     <div><span>Clients served</span><b>{{ totals.served }}</b></div>
   </section>
