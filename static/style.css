@@ -32,7 +32,8 @@ footer { text-align: center; padding: 28px; color: #637875; font-size: 13px; }
 .card h2 { margin-top: 0; font-size: 20px; }
 .form-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 18px 22px; }
 label { font-weight: 700; display: flex; flex-direction: column; gap: 6px; color: #355452; }
-input, select { font: inherit; color: var(--ink); padding: 11px 12px; border: 1px solid #bfd0cb; border-radius: 7px; background: white; }
+input, select, textarea { font: inherit; color: var(--ink); padding: 11px 12px; border: 1px solid #bfd0cb; border-radius: 7px; background: white; }
+textarea { min-height: 96px; resize: vertical; }
 small, .notice { font-weight: 400; color: #6b817e; font-size: 12px; }
 hr { border: 0; border-top: 1px solid var(--line); margin: 28px 0; }
 
@@ -56,6 +57,8 @@ td, th { padding: 11px 8px; border-bottom: 1px solid var(--line); }
 .badge { font-size: 12px; font-weight: bold; padding: 4px 8px; border-radius: 999px; background: #fff0d7; color: #9b6512; }
 .badge.approved { background: #e4f3ef; color: #176d5e; }
 .badge.finished { background: #e5eceb; color: #45615d; }
+.badge.cancelled, .badge.rejected { background: #fff0ee; color: #a33a32; }
+.badge.no-show { background: #f4eaf9; color: #70408a; }
 .load { display: grid; grid-template-columns: 100px 1fr 38px; gap: 8px; align-items: center; margin: 17px 0; font-size: 13px; }
 .load div { height: 9px; background: #e5eeeb; border-radius: 5px; overflow: hidden; }
 .load i { display: block; height: 100%; background: var(--orange); }
@@ -64,6 +67,8 @@ td, th { padding: 11px 8px; border-bottom: 1px solid var(--line); }
 .table-card { overflow: auto; }
 .wide { min-width: 820px; }
 .small { padding: 7px 10px; margin: 6px 0 0; font-size: 12px; }
+.secondary-button { background: #e4efec; color: var(--ink); }
+.danger-button { background: #b33a32; }
 .empty { color: #718481; padding: 18px 0; }
 .schedule-trigger { margin: 0; min-width: 260px; }
 .selected-schedule { margin: 10px 0 0; color: #176d5e; font-weight: 700; }
@@ -94,6 +99,10 @@ dialog::backdrop { background: #0f292680; }
 .notify-actions { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; }
 .notify-actions button, .notify-actions .button-link { margin: 0; }
 .staff-name { color: #58706d; font-size: 12px; font-weight: 700; white-space: nowrap; }
+.history-list { display: grid; gap: 10px; max-height: 460px; overflow: auto; margin-top: 16px; }
+.history-item { border: 1px solid var(--line); border-radius: 9px; padding: 12px; background: var(--pale); }
+.history-item span, .history-item p { color: #58706d; font-size: 13px; }
+.history-item p { margin: 5px 0 0; white-space: pre-wrap; }
 
 @media (max-width: 760px) {
   main { padding: 30px 16px; }

@@ -12,7 +12,7 @@
 
   <section class="card table-card">
     <h2>Waiting for schedule</h2>
-    <p class="notice">Clients are listed by submission time. Schedule the earliest request first.</p>
+    <p class="notice">Clients are listed by submission time. Schedule or reject the earliest request first.</p>
     {% if waiting_requests %}
       <table class="wide">
         <thead>
@@ -27,12 +27,8 @@
               <td>{{ client_request.contact_number }}<br>{{ client_request.email }}</td>
               <td>
                 {% if loop.first %}
-                  <button
-                    class="small schedule-button"
-                    type="button"
-                    data-request-id="{{ client_request.id }}"
-                    data-client-name="{{ client_request.last_name }}, {{ client_request.first_name }} {{ client_request.middle_initial or '' }}"
-                  >Schedule</button>
+                  <button class="small schedule-button" type="button" data-request-id="{{ client_request.id }}" data-client-name="{{ client_request.last_name }}, {{ client_request.first_name }} {{ client_request.middle_initial or '' }}">Schedule</button>
+                  <button class="small secondary-button reject-button" type="button" data-request-id="{{ client_request.id }}" data-client-name="{{ client_request.last_name }}, {{ client_request.first_name }} {{ client_request.middle_initial or '' }}">Reject</button>
                 {% else %}
                   <span class="notice">Waiting for earlier clients</span>
                 {% endif %}
@@ -58,15 +54,10 @@
     <form id="schedule-form" method="post" class="appointment-form">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <div class="form-grid">
-        <label>
-          Appointment date
-          <input id="schedule-date" type="date" name="appointment_date" min="{{ today }}" required>
-        </label>
+        <label>Appointment date<input id="schedule-date" type="date" name="appointment_date" min="{{ today }}" required></label>
         <label>
           Available time
-          <select id="schedule-time" name="appointment_time" required disabled>
-            <option value="">Choose a date first</option>
-          </select>
+          <select id="schedule-time" name="appointment_time" required disabled><option value="">Choose a date first</option></select>
         </label>
       </div>
       <p id="schedule-help" class="notice">Choose a future Monday, Wednesday, or Friday.</p>
@@ -74,29 +65,48 @@
     </form>
   </dialog>
 
+  <dialog id="reject-modal" aria-labelledby="reject-heading">
+    <div class="modal-header">
+      <div>
+        <p class="eyebrow">REQUEST ACTION</p>
+        <h2 id="reject-heading">Reject client request</h2>
+        <p id="reject-client" class="notice"></p>
+      </div>
+      <button class="close-modal" id="reject-close" type="button" aria-label="Close">×</button>
+    </div>
+    <form id="reject-form" method="post" class="appointment-form">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <label>Reason for rejection<textarea name="reason" maxlength="500" required></textarea></label>
+      <button class="danger-button" type="submit">Reject request</button>
+    </form>
+  </dialog>
+
   <form class="filters card" method="get">
+    <label>Search client or phone<input type="search" name="search" value="{{ search }}" placeholder="Name or 11-digit phone"></label>
     <label>Date<input type="date" name="date" value="{{ selected_date }}"></label>
+    <label>From<input type="date" name="start_date" value="{{ start_date }}"></label>
+    <label>To<input type="date" name="end_date" value="{{ end_date }}"></label>
     <label>
       Status
       <select name="status">
         <option value="">All statuses</option>
-        {% for item in ['Approved', 'Finished'] %}
+        {% for item in ['Pending', 'Approved', 'Finished', 'Cancelled', 'No-show'] %}
           <option value="{{ item }}" {% if selected_status == item %}selected{% endif %}>{{ item }}</option>
         {% endfor %}
       </select>
     </label>
-    <button>Filter scheduled clients</button>
+    <button>Search records</button>
     {% if selected_date and session.role == 'admin' %}
       <a class="button-link secondary" href="{{ url_for('export_day', date=selected_date) }}">Export this day</a>
     {% endif %}
   </form>
 
   <section class="card table-card">
-    <h2>Scheduled clients</h2>
+    <h2>Appointment records</h2>
     {% if appointments %}
       <table class="wide">
         <thead>
-          <tr><th>Schedule</th><th>Client</th><th>Details</th><th>Contact</th><th>Status</th></tr>
+          <tr><th>Schedule</th><th>Client</th><th>Details</th><th>Contact</th><th>Status</th><th>Actions</th></tr>
         </thead>
         <tbody>
           {% for appointment in appointments %}
@@ -106,69 +116,139 @@
               <td>{{ appointment.barangay }}<br>{{ appointment.category }}</td>
               <td>{{ appointment.contact_number }}<br>{{ appointment.email }}</td>
               <td>
-                <span class="badge {{ appointment.status|lower }}">{{ appointment.status }}</span>
-                {% if appointment.status == 'Approved' %}
-                  <form method="post" action="{{ url_for('set_status', appointment_id=appointment.id) }}">
-                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                    <input type="hidden" name="status" value="Finished">
-                    <button class="small finish">Mark finished</button>
-                  </form>
-                {% else %}
-                  <span class="notice">Client served</span>
-                {% endif %}
+                <span class="badge {{ appointment.status|lower|replace(' ', '-') }}">{{ appointment.status }}</span>
+                {% if appointment.status_reason %}<p class="notice">{{ appointment.status_reason }}</p>{% endif %}
+              </td>
+              <td>
+                <button class="small manage-button" type="button" data-appointment-id="{{ appointment.id }}" data-client-name="{{ appointment.last_name }}, {{ appointment.first_name }} {{ appointment.middle_initial or '' }}" data-status="{{ appointment.status }}" data-date="{{ appointment.appointment_date }}" data-time="{{ appointment.appointment_time }}" data-notes="{{ appointment.staff_notes or '' }}">Manage</button>
+                <button class="small secondary-button history-button" type="button" data-appointment-id="{{ appointment.id }}" data-client-name="{{ appointment.last_name }}, {{ appointment.first_name }} {{ appointment.middle_initial or '' }}">History</button>
               </td>
             </tr>
           {% endfor %}
         </tbody>
       </table>
     {% else %}
-      <p class="empty">No scheduled clients match this filter.</p>
+      <p class="empty">No appointment records match this search.</p>
     {% endif %}
   </section>
+
+  {% if rejected_requests %}
+    <section class="card table-card">
+      <h2>Rejected requests</h2>
+      <table class="wide">
+        <thead><tr><th>Submitted</th><th>Client</th><th>Reason</th></tr></thead>
+        <tbody>
+          {% for client_request in rejected_requests %}
+            <tr>
+              <td>{{ client_request.created_at }}</td>
+              <td><strong>{{ client_request.last_name }}, {{ client_request.first_name }}</strong><br>{{ client_request.contact_number }}</td>
+              <td>{{ client_request.status_reason }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </section>
+  {% endif %}
+
+  <dialog id="manage-modal" aria-labelledby="manage-heading">
+    <div class="modal-header">
+      <div>
+        <p class="eyebrow">APPOINTMENT ACTION</p>
+        <h2 id="manage-heading">Manage appointment</h2>
+        <p id="manage-client" class="notice"></p>
+      </div>
+      <button class="close-modal" id="manage-close" type="button" aria-label="Close">×</button>
+    </div>
+    <form id="manage-form" method="post" class="appointment-form">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="form-grid">
+        <label>
+          Action
+          <select id="manage-action" name="action" required>
+            <option value="notes">Save staff notes only</option>
+            <option value="finished" data-active-only>Mark client served</option>
+            <option value="reschedule" data-active-only>Reschedule appointment</option>
+            <option value="cancelled" data-active-only>Cancel appointment</option>
+            <option value="no_show" data-active-only>Mark client no-show</option>
+          </select>
+        </label>
+        <label id="manage-reason-group" hidden>Reason<textarea id="manage-reason" name="reason" maxlength="500"></textarea></label>
+      </div>
+      <div id="reschedule-fields" class="form-grid" hidden>
+        <label>New appointment date<input id="manage-date" type="date" name="appointment_date" min="{{ today }}"></label>
+        <label>New available time<select id="manage-time" name="appointment_time" disabled><option value="">Choose a date first</option></select></label>
+      </div>
+      <p id="manage-help" class="notice"></p>
+      <label>Staff-only notes<textarea id="manage-notes" name="staff_notes" maxlength="2000" placeholder="Internal notes: not visible to clients"></textarea></label>
+      <button type="submit">Save appointment action</button>
+    </form>
+  </dialog>
+
+  <dialog id="history-modal" aria-labelledby="history-heading">
+    <div class="modal-header">
+      <div>
+        <p class="eyebrow">APPOINTMENT HISTORY</p>
+        <h2 id="history-heading">Change history</h2>
+        <p id="history-client" class="notice"></p>
+      </div>
+      <button class="close-modal" id="history-close" type="button" aria-label="Close">×</button>
+    </div>
+    <div id="history-list" class="history-list"><p class="notice">Loading history…</p></div>
+  </dialog>
 {% endblock %}
 
 {% block scripts %}
   <script>
     (function () {
-      const modal = document.getElementById('schedule-modal');
-      const closeButton = document.getElementById('schedule-close');
-      const form = document.getElementById('schedule-form');
-      const clientLabel = document.getElementById('schedule-client');
-      const dateInput = document.getElementById('schedule-date');
-      const timeSelect = document.getElementById('schedule-time');
-      const helpText = document.getElementById('schedule-help');
+      const scheduleModal = document.getElementById('schedule-modal');
+      const scheduleForm = document.getElementById('schedule-form');
+      const scheduleDate = document.getElementById('schedule-date');
+      const scheduleTime = document.getElementById('schedule-time');
+      const scheduleHelp = document.getElementById('schedule-help');
+      const rejectModal = document.getElementById('reject-modal');
+      const rejectForm = document.getElementById('reject-form');
+      const manageModal = document.getElementById('manage-modal');
+      const manageForm = document.getElementById('manage-form');
+      const manageAction = document.getElementById('manage-action');
+      const manageReasonGroup = document.getElementById('manage-reason-group');
+      const manageReason = document.getElementById('manage-reason');
+      const rescheduleFields = document.getElementById('reschedule-fields');
+      const manageDate = document.getElementById('manage-date');
+      const manageTime = document.getElementById('manage-time');
+      const manageNotes = document.getElementById('manage-notes');
+      const manageHelp = document.getElementById('manage-help');
+      const historyModal = document.getElementById('history-modal');
+      let currentAppointment = null;
 
-      function formatTime(value) {
-        return new Date(`2000-01-01T${value}`).toLocaleTimeString([], {
-          hour: 'numeric', minute: '2-digit'
-        });
+      function escapeHtml(value) {
+        const div = document.createElement('div');
+        div.textContent = value == null ? '' : value;
+        return div.innerHTML;
       }
 
-      async function loadAvailableTimes() {
+      function formatTime(value) {
+        return new Date(`2000-01-01T${value}`).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+      }
+
+      async function populateTimes(dateInput, timeSelect, helpText) {
         const selectedDate = dateInput.value;
         timeSelect.disabled = true;
         timeSelect.innerHTML = '<option value="">Loading available times...</option>';
-
         if (!selectedDate) {
           timeSelect.innerHTML = '<option value="">Choose a date first</option>';
           return;
         }
-
         try {
           const response = await fetch(`{{ url_for('slots') }}?date=${encodeURIComponent(selectedDate)}`);
           const data = await response.json();
           helpText.textContent = data.message || '';
-          const availableSlots = (data.slots || []).filter(function (slot) {
-            return slot.state === 'available';
-          });
-
-          if (!response.ok || !availableSlots.length) {
+          const slots = (data.slots || []).filter(function (slot) { return slot.state === 'available'; });
+          if (!response.ok || !slots.length) {
             timeSelect.innerHTML = '<option value="">No available times</option>';
             return;
           }
-
           timeSelect.innerHTML = '<option value="">Choose a time</option>';
-          availableSlots.forEach(function (slot) {
+          slots.forEach(function (slot) {
             const option = document.createElement('option');
             option.value = slot.time;
             option.textContent = formatTime(slot.time);
@@ -183,19 +263,92 @@
 
       document.querySelectorAll('.schedule-button').forEach(function (button) {
         button.addEventListener('click', function () {
-          form.action = `/admin/requests/${button.dataset.requestId}/schedule`;
-          clientLabel.textContent = button.dataset.clientName.trim();
-          dateInput.value = '';
-          timeSelect.disabled = true;
-          timeSelect.innerHTML = '<option value="">Choose a date first</option>';
-          helpText.textContent = 'Choose a future Monday, Wednesday, or Friday.';
-          modal.showModal();
+          scheduleForm.action = `/admin/requests/${button.dataset.requestId}/schedule`;
+          document.getElementById('schedule-client').textContent = button.dataset.clientName.trim();
+          scheduleDate.value = '';
+          scheduleTime.disabled = true;
+          scheduleTime.innerHTML = '<option value="">Choose a date first</option>';
+          scheduleHelp.textContent = 'Choose a future Monday, Wednesday, or Friday.';
+          scheduleModal.showModal();
         });
       });
+      scheduleDate.addEventListener('change', function () { populateTimes(scheduleDate, scheduleTime, scheduleHelp); });
+      document.getElementById('schedule-close').addEventListener('click', function () { scheduleModal.close(); });
 
-      dateInput.addEventListener('change', loadAvailableTimes);
-      closeButton.addEventListener('click', function () { modal.close(); });
-      modal.addEventListener('cancel', function () { modal.close(); });
+      document.querySelectorAll('.reject-button').forEach(function (button) {
+        button.addEventListener('click', function () {
+          rejectForm.action = `/admin/requests/${button.dataset.requestId}/reject`;
+          document.getElementById('reject-client').textContent = button.dataset.clientName.trim();
+          rejectForm.querySelector('textarea').value = '';
+          rejectModal.showModal();
+        });
+      });
+      document.getElementById('reject-close').addEventListener('click', function () { rejectModal.close(); });
+
+      function updateManageFields() {
+        const action = manageAction.value;
+        const needsReason = ['cancelled', 'no_show', 'reschedule'].includes(action);
+        const needsSchedule = action === 'reschedule';
+        manageReasonGroup.hidden = !needsReason;
+        manageReason.required = needsReason;
+        rescheduleFields.hidden = !needsSchedule;
+        manageDate.required = needsSchedule;
+        manageTime.required = needsSchedule;
+        if (!needsSchedule) {
+          manageDate.value = '';
+          manageTime.disabled = true;
+          manageTime.innerHTML = '<option value="">Choose a date first</option>';
+        }
+        manageHelp.textContent = needsSchedule ? 'Choose a new available clinic date and time.' : '';
+      }
+
+      document.querySelectorAll('.manage-button').forEach(function (button) {
+        button.addEventListener('click', function () {
+          currentAppointment = button.dataset;
+          manageForm.action = `/admin/appointments/${currentAppointment.appointmentId}/manage`;
+          document.getElementById('manage-client').textContent = `${currentAppointment.clientName.trim()} · ${currentAppointment.date} ${formatTime(currentAppointment.time)}`;
+          manageNotes.value = currentAppointment.notes || '';
+          manageReason.value = '';
+          const active = ['Pending', 'Approved'].includes(currentAppointment.status);
+          manageAction.querySelectorAll('[data-active-only]').forEach(function (option) { option.disabled = !active; });
+          manageAction.value = 'notes';
+          updateManageFields();
+          manageModal.showModal();
+        });
+      });
+      manageAction.addEventListener('change', updateManageFields);
+      manageDate.addEventListener('change', function () { populateTimes(manageDate, manageTime, manageHelp); });
+      document.getElementById('manage-close').addEventListener('click', function () { manageModal.close(); });
+
+      document.querySelectorAll('.history-button').forEach(function (button) {
+        button.addEventListener('click', async function () {
+          document.getElementById('history-client').textContent = button.dataset.clientName.trim();
+          const list = document.getElementById('history-list');
+          list.innerHTML = '<p class="notice">Loading history…</p>';
+          historyModal.showModal();
+          try {
+            const response = await fetch(`/admin/appointments/${button.dataset.appointmentId}/history`);
+            const data = await response.json();
+            if (!data.history || !data.history.length) {
+              list.innerHTML = '<p class="empty">No recorded changes yet.</p>';
+              return;
+            }
+            list.innerHTML = data.history.map(function (item) {
+              const schedule = item.new_date ? `${escapeHtml(item.new_date)} ${escapeHtml(item.new_time || '')}` : '';
+              return '<article class="history-item">' +
+                `<strong>${escapeHtml(item.action)}</strong><br>` +
+                `<span>${escapeHtml(item.created_at)} · ${escapeHtml(item.staff_name)}</span>` +
+                (schedule ? `<p>Schedule: ${schedule}</p>` : '') +
+                (item.reason ? `<p>Reason: ${escapeHtml(item.reason)}</p>` : '') +
+                (item.notes ? `<p>Notes: ${escapeHtml(item.notes)}</p>` : '') +
+              '</article>';
+            }).join('');
+          } catch (error) {
+            list.innerHTML = '<p class="empty">Could not load appointment history.</p>';
+          }
+        });
+      });
+      document.getElementById('history-close').addEventListener('click', function () { historyModal.close(); });
     })();
   </script>
 {% endblock %}

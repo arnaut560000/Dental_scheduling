@@ -88,6 +88,7 @@ def init_db():
             birth_date TEXT NOT NULL, barangay TEXT NOT NULL, category TEXT NOT NULL,
             contact_number TEXT NOT NULL, contact_key TEXT, email TEXT, appointment_date TEXT NOT NULL,
             appointment_time TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'Pending',
+            status_reason TEXT, staff_notes TEXT, updated_at TEXT,
             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
             UNIQUE(appointment_date, appointment_time)
         );
@@ -104,6 +105,7 @@ def init_db():
             contact_key TEXT NOT NULL,
             email TEXT,
             status TEXT NOT NULL DEFAULT 'Waiting for schedule',
+            status_reason TEXT,
             scheduled_appointment_id INTEGER UNIQUE,
             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
         );
@@ -126,10 +128,33 @@ def init_db():
         ON appointments (status);
         CREATE INDEX IF NOT EXISTS idx_appointments_contact_key
         ON appointments (contact_key);
+        CREATE TABLE IF NOT EXISTS appointment_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            appointment_id INTEGER NOT NULL,
+            user_id INTEGER,
+            action TEXT NOT NULL,
+            old_status TEXT,
+            new_status TEXT,
+            old_date TEXT,
+            old_time TEXT,
+            new_date TEXT,
+            new_time TEXT,
+            reason TEXT,
+            notes TEXT,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE INDEX IF NOT EXISTS idx_appointment_history_appointment
+        ON appointment_history (appointment_id, id DESC);
     """)
     columns = {row["name"] for row in database.execute("PRAGMA table_info(appointments)").fetchall()}
     if "contact_key" not in columns:
         database.execute("ALTER TABLE appointments ADD COLUMN contact_key TEXT")
+    if "status_reason" not in columns:
+        database.execute("ALTER TABLE appointments ADD COLUMN status_reason TEXT")
+    if "staff_notes" not in columns:
+        database.execute("ALTER TABLE appointments ADD COLUMN staff_notes TEXT")
+    if "updated_at" not in columns:
+        database.execute("ALTER TABLE appointments ADD COLUMN updated_at TEXT")
     legacy_rows = database.execute(
         "SELECT id, contact_number FROM appointments WHERE contact_key IS NULL"
     ).fetchall()
@@ -138,6 +163,12 @@ def init_db():
             "UPDATE appointments SET contact_key=? WHERE id=?",
             (normalize_contact(row["contact_number"]), row["id"]),
         )
+
+    request_columns = {
+        row["name"] for row in database.execute("PRAGMA table_info(client_requests)").fetchall()
+    }
+    if "status_reason" not in request_columns:
+        database.execute("ALTER TABLE client_requests ADD COLUMN status_reason TEXT")
 
     user_columns = {row["name"] for row in database.execute("PRAGMA table_info(users)").fetchall()}
     if "last_seen_appointment_id" not in user_columns:
@@ -237,6 +268,42 @@ def audit(action, appointment_id=None, target_user_id=None, details=None):
         ) VALUES (?, ?, ?, ?, ?)
         """,
         (session.get("user_id"), action, appointment_id, target_user_id, details),
+    )
+
+
+def record_appointment_history(
+    appointment_id,
+    action,
+    old_status=None,
+    new_status=None,
+    old_date=None,
+    old_time=None,
+    new_date=None,
+    new_time=None,
+    reason=None,
+    notes=None,
+):
+    """Keep a permanent, staff-attributed history for appointment changes."""
+    db().execute(
+        """
+        INSERT INTO appointment_history (
+            appointment_id, user_id, action, old_status, new_status,
+            old_date, old_time, new_date, new_time, reason, notes
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            appointment_id,
+            session.get("user_id"),
+            action,
+            old_status,
+            new_status,
+            old_date,
+            old_time,
+            new_date,
+            new_time,
+            reason,
+            notes,
+        ),
     )
 
 
@@ -815,6 +882,14 @@ def schedule_request(request_id):
                 flash("This request was already scheduled.", "error")
                 return redirect(url_for("appointments"))
 
+            record_appointment_history(
+                cursor.lastrowid,
+                "Scheduled",
+                new_status="Approved",
+                new_date=appointment_date,
+                new_time=appointment_time,
+                notes="Appointment created from the first-come-first-served queue.",
+            )
             audit(
                 "client_scheduled",
                 appointment_id=cursor.lastrowid,
@@ -830,16 +905,65 @@ def schedule_request(request_id):
     return redirect(url_for("appointments"))
 
 
+@app.post("/admin/requests/<int:request_id>/reject")
+@roles_required("admin", "scheduler")
+def reject_request(request_id):
+    reason = request.form.get("reason", "").strip()
+    first_waiting_request = db().execute(
+        """
+        SELECT id
+        FROM client_requests
+        WHERE status='Waiting for schedule'
+        ORDER BY datetime(created_at) ASC, id ASC
+        LIMIT 1
+        """
+    ).fetchone()
+
+    if not first_waiting_request or first_waiting_request["id"] != request_id:
+        flash("Only the first client in the queue can be rejected.", "error")
+    elif not reason:
+        flash("Enter a reason before rejecting a client request.", "error")
+    elif len(reason) > 500:
+        flash("The rejection reason must be 500 characters or fewer.", "error")
+    else:
+        cursor = db().execute(
+            """
+            UPDATE client_requests
+            SET status='Rejected', status_reason=?
+            WHERE id=? AND status='Waiting for schedule'
+            """,
+            (reason, request_id),
+        )
+        if cursor.rowcount:
+            audit("client_request_rejected", details=f"client_request_id={request_id}; reason={reason}")
+            db().commit()
+            flash("Client request rejected. The next client is now first in the queue.", "success")
+        else:
+            db().rollback()
+            flash("This client request is no longer waiting for a schedule.", "error")
+    return redirect(url_for("appointments"))
+
+
 @app.get("/admin/appointments")
 @roles_required("admin", "scheduler")
 def appointments():
     selected_date = request.args.get("date", "")
     status = request.args.get("status", "")
+    search = request.args.get("search", "").strip()
+    start_date = request.args.get("start_date", "")
+    end_date = request.args.get("end_date", "")
     query, params = "SELECT * FROM appointments WHERE 1=1", []
     if selected_date:
         query += " AND appointment_date=?"; params.append(selected_date)
     if status:
         query += " AND status=?"; params.append(status)
+    if search:
+        query += " AND (LOWER(last_name || ' ' || first_name || ' ' || COALESCE(middle_initial, '')) LIKE ? OR contact_key LIKE ?)"
+        params.extend([f"%{search.lower()}%", f"%{normalize_contact(search)}%"])
+    if start_date:
+        query += " AND appointment_date>=?"; params.append(start_date)
+    if end_date:
+        query += " AND appointment_date<=?"; params.append(end_date)
     query += " ORDER BY appointment_date DESC, appointment_time"
     rows = db().execute(query, params).fetchall()
     waiting_requests = db().execute(
@@ -850,34 +974,177 @@ def appointments():
         ORDER BY datetime(created_at) ASC, id ASC
         """
     ).fetchall()
+    rejected_requests = db().execute(
+        """
+        SELECT *
+        FROM client_requests
+        WHERE status='Rejected'
+        ORDER BY datetime(created_at) DESC, id DESC
+        LIMIT 50
+        """
+    ).fetchall()
     return render_template(
         "appointments.html",
         appointments=rows,
         waiting_requests=waiting_requests,
         selected_date=selected_date,
         selected_status=status,
+        search=search,
+        start_date=start_date,
+        end_date=end_date,
+        rejected_requests=rejected_requests,
         today=date.today().isoformat(),
     )
 
 
-@app.post("/admin/appointments/<int:appointment_id>/status")
+@app.post("/admin/appointments/<int:appointment_id>/manage")
 @roles_required("admin", "scheduler")
-def set_status(appointment_id):
-    status = request.form.get("status")
-    if status in {"Pending", "Approved", "Finished"}:
-        cursor = db().execute(
-            "UPDATE appointments SET status=? WHERE id=?",
-            (status, appointment_id),
-        )
-        if cursor.rowcount:
-            audit(
-                "appointment_status_changed",
-                appointment_id=appointment_id,
-                details=f"status={status}",
+def manage_appointment(appointment_id):
+    action = request.form.get("action", "")
+    reason = request.form.get("reason", "").strip()
+    staff_notes = request.form.get("staff_notes", "").strip()
+    appointment_date = request.form.get("appointment_date", "")
+    appointment_time = request.form.get("appointment_time", "")
+    allowed_actions = {"notes", "finished", "cancelled", "no_show", "reschedule"}
+
+    if action not in allowed_actions:
+        flash("Choose a valid appointment action.", "error")
+        return redirect(url_for("appointments"))
+    if len(reason) > 500 or len(staff_notes) > 2000:
+        flash("Reasons must be 500 characters or fewer and staff notes 2,000 or fewer.", "error")
+        return redirect(url_for("appointments"))
+    if action in {"cancelled", "no_show", "reschedule"} and not reason:
+        flash("Enter a reason for this appointment action.", "error")
+        return redirect(url_for("appointments"))
+    if action == "notes" and not staff_notes:
+        flash("Enter staff notes to save them.", "error")
+        return redirect(url_for("appointments"))
+
+    database = db()
+    try:
+        database.execute("BEGIN IMMEDIATE")
+        appointment = database.execute(
+            "SELECT * FROM appointments WHERE id=?", (appointment_id,)
+        ).fetchone()
+        if not appointment:
+            database.rollback()
+            flash("Appointment not found.", "error")
+            return redirect(url_for("appointments"))
+        if action != "notes" and appointment["status"] not in {"Pending", "Approved"}:
+            database.rollback()
+            flash("Only active appointments can be changed.", "error")
+            return redirect(url_for("appointments"))
+
+        new_status = appointment["status"]
+        new_date = appointment["appointment_date"]
+        new_time = appointment["appointment_time"]
+        new_reason = appointment["status_reason"]
+        action_label = {
+            "notes": "Notes updated",
+            "finished": "Marked finished",
+            "cancelled": "Cancelled",
+            "no_show": "No-show marked",
+            "reschedule": "Rescheduled",
+        }[action]
+
+        if action == "finished":
+            new_status, new_reason = "Finished", None
+        elif action == "cancelled":
+            new_status, new_reason = "Cancelled", reason
+        elif action == "no_show":
+            new_status, new_reason = "No-show", reason
+        elif action == "reschedule":
+            if not valid_clinic_date(appointment_date) or appointment_time not in SLOT_TIMES:
+                database.rollback()
+                flash("Choose an available future Monday, Wednesday, or Friday time.", "error")
+                return redirect(url_for("appointments"))
+            same_slot = database.execute(
+                """
+                SELECT 1 FROM appointments
+                WHERE appointment_date=? AND appointment_time=? AND id<>?
+                """,
+                (appointment_date, appointment_time, appointment_id),
+            ).fetchone()
+            daily_count = database.execute(
+                "SELECT COUNT(*) FROM appointments WHERE appointment_date=? AND id<>?",
+                (appointment_date, appointment_id),
+            ).fetchone()[0]
+            if same_slot or daily_count >= MAX_PER_DAY:
+                database.rollback()
+                flash("That new schedule is no longer available.", "error")
+                return redirect(url_for("appointments"))
+            new_date, new_time, new_status, new_reason = (
+                appointment_date,
+                appointment_time,
+                "Approved",
+                reason,
             )
-        db().commit()
-        flash("Client status updated.", "success")
+
+        database.execute(
+            """
+            UPDATE appointments
+            SET status=?, status_reason=?, staff_notes=?, appointment_date=?,
+                appointment_time=?, updated_at=CURRENT_TIMESTAMP
+            WHERE id=?
+            """,
+            (new_status, new_reason, staff_notes, new_date, new_time, appointment_id),
+        )
+        record_appointment_history(
+            appointment_id,
+            action_label,
+            old_status=appointment["status"],
+            new_status=new_status,
+            old_date=appointment["appointment_date"],
+            old_time=appointment["appointment_time"],
+            new_date=new_date,
+            new_time=new_time,
+            reason=reason or None,
+            notes=staff_notes or None,
+        )
+        audit(
+            f"appointment_{action}",
+            appointment_id=appointment_id,
+            details=f"status={new_status}; date={new_date}; time={new_time}",
+        )
+        database.commit()
+        flash("Appointment updated successfully.", "success")
+    except sqlite3.IntegrityError:
+        database.rollback()
+        flash("That new schedule was just taken. Please try another time.", "error")
     return redirect(url_for("appointments"))
+
+
+@app.get("/admin/appointments/<int:appointment_id>/history")
+@roles_required("admin", "scheduler")
+def appointment_history(appointment_id):
+    rows = db().execute(
+        """
+        SELECT h.*, COALESCE(u.display_name, u.username, 'System') AS staff_name
+        FROM appointment_history h
+        LEFT JOIN users u ON u.id=h.user_id
+        WHERE h.appointment_id=?
+        ORDER BY h.id DESC
+        """,
+        (appointment_id,),
+    ).fetchall()
+    return {
+        "history": [
+            {
+                "action": row["action"],
+                "staff_name": row["staff_name"],
+                "old_status": row["old_status"],
+                "new_status": row["new_status"],
+                "old_date": row["old_date"],
+                "old_time": row["old_time"],
+                "new_date": row["new_date"],
+                "new_time": row["new_time"],
+                "reason": row["reason"],
+                "notes": row["notes"],
+                "created_at": row["created_at"],
+            }
+            for row in rows
+        ]
+    }
 
 
 @app.get("/admin/notifications")
