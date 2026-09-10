@@ -349,8 +349,8 @@ def request_appointment():
 
         if any(not fields[name] for name in required):
             flash("Complete all required fields.", "error")
-        elif len(fields["contact_key"]) < 7:
-            flash("Please enter a valid contact number.", "error")
+        elif not re.fullmatch(r"\d{11}", fields["contact_number"]):
+            flash("Enter an 11-digit contact number using numbers only.", "error")
         elif recent_request or recent_appointment:
             flash(
                 f"A request using this contact number was already submitted within the last "

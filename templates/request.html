@@ -27,7 +27,23 @@
           {% endfor %}
         </select>
       </label>
-      <label>Contact number*<input type="tel" name="contact_number" required value="{{ request.form.contact_number }}"></label>
+      <label>
+        Contact number*
+        <input
+          type="tel"
+          name="contact_number"
+          inputmode="numeric"
+          autocomplete="tel"
+          pattern="[0-9]{11}"
+          minlength="11"
+          maxlength="11"
+          placeholder="09171234567"
+          title="Enter exactly 11 digits."
+          required
+          value="{{ request.form.contact_number }}"
+          oninput="this.value = this.value.replace(/\D/g, '').slice(0, 11)"
+        >
+      </label>
       <label>Email address<input type="email" name="email" value="{{ request.form.email }}"></label>
     </div>
     <button type="submit">Submit request</button>
