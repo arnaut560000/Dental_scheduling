@@ -32,6 +32,11 @@ footer { text-align: center; padding: 28px; color: #637875; font-size: 13px; }
 .card h2 { margin-top: 0; font-size: 20px; }
 .form-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 18px 22px; }
 label { font-weight: 700; display: flex; flex-direction: column; gap: 6px; color: #355452; }
+.choice-group { border: 0; padding: 0; margin: 0; min-width: 0; }
+.choice-group legend { font-weight: 700; color: #355452; margin-bottom: 6px; }
+.option-list { display: grid; gap: 8px; margin-top: 8px; }
+.choice-option { flex-direction: row; align-items: center; gap: 9px; border: 1px solid #bfd0cb; border-radius: 7px; padding: 10px 12px; font-weight: 400; cursor: pointer; }
+.choice-option input { width: 17px; height: 17px; padding: 0; margin: 0; }
 .consent-check { flex-direction: row; align-items: flex-start; gap: 9px; margin-top: 20px; font-weight: 400; }
 .consent-check input { width: 18px; height: 18px; margin: 2px 0 0; flex: 0 0 auto; }
 .consent-check a { color: var(--green); font-weight: 700; }

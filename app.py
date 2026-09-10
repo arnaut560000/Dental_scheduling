@@ -67,6 +67,7 @@ SLOT_MINUTES = 15
 REQUEST_COOLDOWN_DAYS = 30
 CLINIC_DAYS = {0, 2, 4}  # Monday, Wednesday, Friday
 VALID_CATEGORIES = {"Regular", "PWD", "Senior Citizen"}
+VALID_GENDERS = {"Female", "Male", "Prefer not to say"}
 SLOT_TIMES = [
     f"{hour:02d}:{minute:02d}"
     for hour in range(8, 12)
@@ -166,7 +167,7 @@ def create_postgres_schema(database):
         CREATE TABLE IF NOT EXISTS appointments (
             id BIGSERIAL PRIMARY KEY,
             last_name TEXT NOT NULL, first_name TEXT NOT NULL, middle_initial TEXT,
-            birth_date TEXT NOT NULL, barangay TEXT NOT NULL, category TEXT NOT NULL,
+            birth_date TEXT NOT NULL, gender TEXT NOT NULL, barangay TEXT NOT NULL, category TEXT NOT NULL,
             contact_number TEXT NOT NULL, contact_key TEXT, email TEXT,
             appointment_date TEXT NOT NULL, appointment_time TEXT NOT NULL,
             status TEXT NOT NULL DEFAULT 'Pending', status_reason TEXT,
@@ -180,7 +181,7 @@ def create_postgres_schema(database):
             id BIGSERIAL PRIMARY KEY,
             request_code TEXT NOT NULL UNIQUE,
             last_name TEXT NOT NULL, first_name TEXT NOT NULL, middle_initial TEXT,
-            birth_date TEXT NOT NULL, barangay TEXT NOT NULL, category TEXT NOT NULL,
+            birth_date TEXT NOT NULL, gender TEXT NOT NULL, barangay TEXT NOT NULL, category TEXT NOT NULL,
             contact_number TEXT NOT NULL, contact_key TEXT NOT NULL, email TEXT,
             privacy_consent INTEGER NOT NULL DEFAULT 0,
             consent_at TIMESTAMPTZ,
@@ -248,7 +249,7 @@ def init_db():
         CREATE TABLE IF NOT EXISTS appointments (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             last_name TEXT NOT NULL, first_name TEXT NOT NULL, middle_initial TEXT,
-            birth_date TEXT NOT NULL, barangay TEXT NOT NULL, category TEXT NOT NULL,
+            birth_date TEXT NOT NULL, gender TEXT NOT NULL, barangay TEXT NOT NULL, category TEXT NOT NULL,
             contact_number TEXT NOT NULL, contact_key TEXT, email TEXT, appointment_date TEXT NOT NULL,
             appointment_time TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'Pending',
             status_reason TEXT, staff_notes TEXT, updated_at TEXT,
@@ -262,6 +263,7 @@ def init_db():
             first_name TEXT NOT NULL,
             middle_initial TEXT,
             birth_date TEXT NOT NULL,
+            gender TEXT NOT NULL,
             barangay TEXT NOT NULL,
             category TEXT NOT NULL,
             contact_number TEXT NOT NULL,
@@ -321,6 +323,8 @@ def init_db():
         database.execute("ALTER TABLE appointments ADD COLUMN staff_notes TEXT")
     if "updated_at" not in columns:
         database.execute("ALTER TABLE appointments ADD COLUMN updated_at TEXT")
+    if "gender" not in columns:
+        database.execute("ALTER TABLE appointments ADD COLUMN gender TEXT")
     legacy_rows = database.execute(
         "SELECT id, contact_number FROM appointments WHERE contact_key IS NULL"
     ).fetchall()
@@ -339,6 +343,8 @@ def init_db():
         database.execute("ALTER TABLE client_requests ADD COLUMN privacy_consent INTEGER NOT NULL DEFAULT 0")
     if "consent_at" not in request_columns:
         database.execute("ALTER TABLE client_requests ADD COLUMN consent_at TEXT")
+    if "gender" not in request_columns:
+        database.execute("ALTER TABLE client_requests ADD COLUMN gender TEXT")
 
     user_columns = table_columns(database, "users")
     if "last_seen_appointment_id" not in user_columns:
@@ -887,14 +893,16 @@ def request_appointment():
         fields = {
             key: request.form.get(key, "").strip()
             for key in [
-                "last_name", "first_name", "middle_initial", "birth_date", "barangay",
-                "category", "contact_number", "email",
+                "last_name", "first_name", "middle_initial", "birth_date", "gender", "barangay",
+                "contact_number", "email",
             ]
         }
         required = [
-            "last_name", "first_name", "birth_date", "barangay", "category",
+            "last_name", "first_name", "birth_date", "gender", "barangay",
             "contact_number",
         ]
+        category_values = request.form.getlist("category")
+        fields["category"] = category_values[0] if len(category_values) == 1 else ""
         fields["contact_key"] = normalize_contact(fields["contact_number"])
         fields["privacy_consent"] = request.form.get("privacy_consent") == "on"
         cooldown_cutoff = (datetime.now() - timedelta(days=REQUEST_COOLDOWN_DAYS)).strftime(
@@ -925,8 +933,10 @@ def request_appointment():
             flash("Enter a valid barangay name.", "error")
         elif not valid_birth_date(fields["birth_date"]):
             flash("Enter a valid birth date.", "error")
-        elif fields["category"] not in VALID_CATEGORIES:
-            flash("Choose a valid client sector.", "error")
+        elif len(category_values) != 1 or fields["category"] not in VALID_CATEGORIES:
+            flash("Choose exactly one client sector.", "error")
+        elif fields["gender"] not in VALID_GENDERS:
+            flash("Choose a valid gender.", "error")
         elif not valid_email(fields["email"]):
             flash("Enter a valid email address or leave it blank.", "error")
         elif not re.fullmatch(r"\d{11}", fields["contact_number"]):
@@ -945,14 +955,14 @@ def request_appointment():
                 db(),
                 """
                 INSERT INTO client_requests (
-                    request_code, last_name, first_name, middle_initial, birth_date,
+                    request_code, last_name, first_name, middle_initial, birth_date, gender,
                     barangay, category, contact_number, contact_key, email,
                     privacy_consent, consent_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
                 """,
                 (
                     fields["request_code"], fields["last_name"], fields["first_name"],
-                    fields["middle_initial"], fields["birth_date"], fields["barangay"],
+                    fields["middle_initial"], fields["birth_date"], fields["gender"], fields["barangay"],
                     fields["category"], fields["contact_number"], fields["contact_key"],
                     fields["email"], int(fields["privacy_consent"]),
                 ),
@@ -1376,16 +1386,17 @@ def schedule_request(request_id):
             appointment_id = insert_and_get_id(database,
                 """
                 INSERT INTO appointments (
-                    last_name, first_name, middle_initial, birth_date, barangay,
+                    last_name, first_name, middle_initial, birth_date, gender, barangay,
                     category, contact_number, contact_key, email, appointment_date,
                     appointment_time, status
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Approved')
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Approved')
                 """,
                 (
                     fresh_request["last_name"],
                     fresh_request["first_name"],
                     fresh_request["middle_initial"],
                     fresh_request["birth_date"],
+                    fresh_request["gender"],
                     fresh_request["barangay"],
                     fresh_request["category"],
                     fresh_request["contact_number"],
@@ -1770,13 +1781,13 @@ def export_day():
     stream = io.StringIO()
     writer = csv.writer(stream)
     writer.writerow([
-        "Time", "Last name", "First name", "MI", "Birth date", "Barangay",
+        "Time", "Last name", "First name", "MI", "Birth date", "Gender", "Barangay",
         "Category", "Contact", "Email", "Status",
     ])
     for row in rows:
         writer.writerow([
             format_time(row["appointment_time"]), row["last_name"], row["first_name"],
-            row["middle_initial"], row["birth_date"], row["barangay"], row["category"],
+            row["middle_initial"], row["birth_date"], row["gender"], row["barangay"], row["category"],
             row["contact_number"], row["email"], row["status"],
         ])
     filename = f"tooth-removal-schedule-{selected}.csv"

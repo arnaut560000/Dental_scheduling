@@ -18,15 +18,29 @@
       <label>Middle initial<input name="middle_initial" maxlength="5" value="{{ request.form.middle_initial }}"></label>
       <label>Birth date*<input type="date" name="birth_date" required value="{{ request.form.birth_date }}"></label>
       <label>Barangay*<input name="barangay" maxlength="100" required value="{{ request.form.barangay }}"></label>
-      <label>
-        Sector*
-        <select name="category" required>
-          <option value="">Select sector</option>
+      <fieldset class="choice-group">
+        <legend>Sector*</legend>
+        <span class="notice">Choose one sector.</span>
+        <div class="option-list">
           {% for category in ['Regular', 'PWD', 'Senior Citizen'] %}
-            <option value="{{ category }}" {% if request.form.category == category %}selected{% endif %}>{{ category }}</option>
+            <label class="choice-option">
+              <input type="checkbox" name="category" value="{{ category }}" {% if category in request.form.getlist('category') %}checked{% endif %}>
+              <span>{{ category }}</span>
+            </label>
           {% endfor %}
-        </select>
-      </label>
+        </div>
+      </fieldset>
+      <fieldset class="choice-group">
+        <legend>Gender*</legend>
+        <div class="option-list">
+          {% for gender in ['Female', 'Male', 'Prefer not to say'] %}
+            <label class="choice-option">
+              <input type="radio" name="gender" value="{{ gender }}" required {% if request.form.gender == gender %}checked{% endif %}>
+              <span>{{ gender }}</span>
+            </label>
+          {% endfor %}
+        </div>
+      </fieldset>
       <label>
         Contact number*
         <input
@@ -53,4 +67,18 @@
     <button type="submit">Submit request</button>
     <p class="notice">A scheduler will manually assign your appointment date and time. One request per contact number is allowed every {{ cooldown_days }} days.</p>
   </form>
+{% endblock %}
+
+{% block scripts %}
+  <script>
+    document.querySelectorAll('input[name="category"]').forEach(function (checkbox) {
+      checkbox.addEventListener('change', function () {
+        if (checkbox.checked) {
+          document.querySelectorAll('input[name="category"]').forEach(function (other) {
+            if (other !== checkbox) other.checked = false;
+          });
+        }
+      });
+    });
+  </script>
 {% endblock %}

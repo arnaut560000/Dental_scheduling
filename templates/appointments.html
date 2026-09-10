@@ -22,7 +22,7 @@
           {% for client_request in waiting_requests %}
             <tr>
               <td><strong>{{ client_request.created_at }}</strong><br><span class="notice">Queue #{{ loop.index }}</span></td>
-              <td><strong>{{ client_request.last_name }}, {{ client_request.first_name }} {{ client_request.middle_initial }}</strong><br>{{ client_request.birth_date }}</td>
+              <td><strong>{{ client_request.last_name }}, {{ client_request.first_name }} {{ client_request.middle_initial }}</strong><br>{{ client_request.birth_date }} · {{ client_request.gender or 'Not recorded' }}</td>
               <td>{{ client_request.barangay }}<br>{{ client_request.category }}</td>
               <td>{{ client_request.contact_number }}<br>{{ client_request.email }}</td>
               <td>
@@ -112,7 +112,7 @@
           {% for appointment in appointments %}
             <tr>
               <td>{{ appointment.appointment_date }}<br><strong>{{ appointment.appointment_time|time12 }}</strong></td>
-              <td><strong>{{ appointment.last_name }}, {{ appointment.first_name }} {{ appointment.middle_initial }}</strong><br>{{ appointment.birth_date }}</td>
+              <td><strong>{{ appointment.last_name }}, {{ appointment.first_name }} {{ appointment.middle_initial }}</strong><br>{{ appointment.birth_date }} · {{ appointment.gender or 'Not recorded' }}</td>
               <td>{{ appointment.barangay }}<br>{{ appointment.category }}</td>
               <td>{{ appointment.contact_number }}<br>{{ appointment.email }}</td>
               <td>
