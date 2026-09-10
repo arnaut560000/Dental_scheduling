@@ -1,72 +1,68 @@
 # SmileCare Scheduling
 
-This web application accepts free tooth-removal appointment requests. The public client form does not need a login. An administrator reviews requests, changes them from **Pending** to **Approved**, and manually marks clients **Finished** after service.
+SmileCare is a clinic request and staff-scheduling system for free tooth-removal assistance. Clients submit their details and consent to the Privacy Notice. Staff schedule clients in strict first-come-first-served order, then manage reschedules, cancellations, no-shows, notes, and history.
 
-## Scheduling rules
+## Included workflow
 
-- Clinic days: Monday, Wednesday, and Friday only
-- Clinic hours: 8:00 AM to 12:00 PM
-- Appointment length: 15 minutes
-- Maximum: 15 clients per day
-- The schedule popup shows every morning time block as **Available** or **Taken**. When client 15 submits, all remaining blocks become unavailable automatically.
+- Public client request form with 11-digit phone validation and privacy consent
+- First-come-first-served scheduling queue
+- Staff accounts, roles, password reset, and last-admin protection
+- Appointment rescheduling, cancellation, no-show, rejection reasons, and staff-only notes
+- Permanent appointment change history and audit events
+- Client search, date/status filtering, analytics, CSV export, and PDF export
+- `/health` endpoint for hosting health checks
 
-## Run locally
+## Run locally with SQLite
 
-Open PowerShell in this project folder:
+SQLite is for local development only. Open PowerShell in this folder:
 
 ```powershell
-py -m pip install -r requirements.txt
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
 $env:ADMIN_USERNAME='admin'
-$env:ADMIN_PASSWORD='replace-with-a-strong-password'
+$env:ADMIN_PASSWORD='replace-with-a-long-unique-password'
 $env:SECRET_KEY='replace-with-a-long-random-secret'
 $env:COOKIE_SECURE='0'
-py -m flask --app app run
+.\.venv\Scripts\python.exe -m flask --app app run --host=0.0.0.0 --port=5000
 ```
 
-Open `http://127.0.0.1:5000` for clients and `http://127.0.0.1:5000/admin/login` for staff. Stop the server with `Ctrl + C`.
+Client form: `http://127.0.0.1:5000`
 
-## Deploy for real public use: Render + GitHub + SQLite
+Staff sign-in: `http://127.0.0.1:5000/admin/login`
 
-This app uses SQLite. **Do not use Vercel for the live SQLite database**: Vercel Functions are serverless and their deployment filesystem is not a durable database. Use a Render web service with a persistent disk instead. Render documents that a disk preserves files under its mount path across restarts and deploys; without one, its filesystem is also temporary. [Render persistent disks](https://render.com/docs/disks)
+## Production deployment: Render + PostgreSQL
 
-1. Create an empty GitHub repository.
-2. In this project folder, run:
+Do not deploy the SQLite file for public use. Use a hosted PostgreSQL database and set `DATABASE_URL` in the host's secret settings. The application detects `DATABASE_URL`, creates the PostgreSQL schema on first start, and keeps SQLite only when that value is absent.
 
-   ```powershell
-   git init
-   git add .
-   git commit -m "Initial SmileCare scheduling app"
-   git branch -M main
-   git remote add origin https://github.com/YOUR-USERNAME/YOUR-REPOSITORY.git
-   git push -u origin main
-   ```
+1. Create a PostgreSQL database with your provider, such as Supabase or a paid Render Postgres database.
+2. Create a Render Web Service from this GitHub repository. The included `render.yaml` supplies the build command, production start command, and `/health` check.
+3. Add the following secrets in Render; do not put any of them in GitHub:
 
-3. Create an account at Render, then select **New → Web Service** and connect the GitHub repository.
-4. Use these deployment values:
+   - `DATABASE_URL` - full PostgreSQL connection string
+   - `ADMIN_USERNAME` - first administrator username
+   - `ADMIN_PASSWORD` - first administrator password
+   - `SECRET_KEY` - long random secret
+   - `PRIVACY_CONTACT` - real clinic email address or contact method for privacy requests
 
-   - Language: `Python 3`
-   - Build command: `pip install -r requirements.txt`
-   - Start command: `gunicorn app:app`
+4. Set `COOKIE_SECURE=1`, `CLINIC_NAME`, and an appropriate hosting plan.
+5. Set Render's health-check path to `/health` if you create the service manually.
+6. Open the generated `onrender.com` address, confirm the health check, submit a test request, and sign in as staff.
 
-   These are Render’s documented Flask deployment commands. [Render Flask guide](https://render.com/docs/deploy-flask)
+The database should have automatic backups and a tested restore procedure before collecting real client information.
 
-5. Under **Advanced**, attach a persistent disk. Choose mount path `/var/data`. A persistent disk requires a paid Render web service and is limited to one instance, which is appropriate for this small SQLite clinic scheduler. [Disk limitations](https://render.com/docs/disks)
-6. Add these Render environment variables:
+## Required environment variables
 
-   - `DATABASE_PATH=/var/data/dental_schedule.db`
-   - `ADMIN_USERNAME=your-admin-name`
-   - `ADMIN_PASSWORD=a-long-unique-password`
-   - `SECRET_KEY=a-long-random-secret`
-   - `COOKIE_SECURE=1`
+Copy `.env.example` as a reference only. Real values belong in local environment variables or your hosting provider's encrypted secret settings.
 
-7. Click **Create Web Service**. Render gives you an `onrender.com` address. Every later push to GitHub can automatically redeploy it.
+## Public-launch checklist
 
-GitHub holds your source code. Render runs the Flask server and persistent SQLite file. They are separate jobs, not one “GitHub backend.”
+- Use PostgreSQL, never a temporary SQLite file
+- Configure a real privacy contact and review the Privacy Notice
+- Configure database backups and test a restore
+- Use HTTPS and `COOKIE_SECURE=1`
+- Create strong staff passwords; never commit credentials
+- Test public form, staff sign-in, scheduling, exports, and `/health` from a phone and desktop
+- Decide a retention and secure-deletion policy for old client records
 
-## Vercel option
+## Notes on free hosting
 
-`vercel.json` remains in this repository for testing the Flask site on Vercel, but it must be paired with a hosted database such as Neon/Postgres, Supabase, or Turso. Do not collect actual appointment requests using SQLite on Vercel. Vercel does support Flask in its Python Functions runtime, but that is not a persistent SQLite hosting setup. [Vercel Python Functions](https://vercel.com/docs/functions/runtimes/python)
-
-## Automatic behaviour included
-
-No external automation is necessary for core scheduling: availability is recalculated whenever a client opens the popup and is checked again on submission, so two people cannot take the same slot and day 16 is rejected. Email or SMS approval reminders are deliberately not enabled because they need an approved sending service, sender account, consent wording, and credentials.
+Free hosting is suitable for a limited demo, not guaranteed public service. A free Render web service can sleep and its local files are temporary. A free PostgreSQL provider may pause or limit the database. For ongoing city-wide use, plan for paid hosting/database and a real custom domain.

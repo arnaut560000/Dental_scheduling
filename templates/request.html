@@ -13,11 +13,11 @@
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <h2>Client information</h2>
     <div class="form-grid">
-      <label>Last name*<input name="last_name" required value="{{ request.form.last_name }}"></label>
-      <label>First name*<input name="first_name" required value="{{ request.form.first_name }}"></label>
+      <label>Last name*<input name="last_name" maxlength="80" required value="{{ request.form.last_name }}"></label>
+      <label>First name*<input name="first_name" maxlength="80" required value="{{ request.form.first_name }}"></label>
       <label>Middle initial<input name="middle_initial" maxlength="5" value="{{ request.form.middle_initial }}"></label>
       <label>Birth date*<input type="date" name="birth_date" required value="{{ request.form.birth_date }}"></label>
-      <label>Barangay*<input name="barangay" required value="{{ request.form.barangay }}"></label>
+      <label>Barangay*<input name="barangay" maxlength="100" required value="{{ request.form.barangay }}"></label>
       <label>
         Sector*
         <select name="category" required>
@@ -46,6 +46,10 @@
       </label>
       <label>Email address<input type="email" name="email" value="{{ request.form.email }}"></label>
     </div>
+    <label class="consent-check">
+      <input type="checkbox" name="privacy_consent" required {% if request.form.privacy_consent %}checked{% endif %}>
+      <span>I have read and agree to the <a href="{{ url_for('privacy_notice') }}" target="_blank" rel="noopener">Privacy Notice</a> and allow the clinic to use my information to process this appointment request.</span>
+    </label>
     <button type="submit">Submit request</button>
     <p class="notice">A scheduler will manually assign your appointment date and time. One request per contact number is allowed every {{ cooldown_days }} days.</p>
   </form>

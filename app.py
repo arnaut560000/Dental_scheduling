@@ -1,5 +1,6 @@
 import csv
 import io
+import logging
 import os
 import re
 import secrets
@@ -21,6 +22,8 @@ from flask import (
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from flask_wtf.csrf import CSRFError, CSRFProtect
+from psycopg import IntegrityError as PostgresIntegrityError
+from psycopg import connect as postgres_connect
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import getSampleStyleSheet
@@ -35,11 +38,14 @@ if not secret_key:
 
 app.config.update(
     SECRET_KEY=secret_key,
+    DATABASE_URL=os.environ.get("DATABASE_URL", "").strip(),
     DATABASE=os.environ.get(
         "DATABASE_PATH",
         os.path.join(app.root_path, "dental_schedule.db"),
     ),
     MAX_CONTENT_LENGTH=64 * 1024,
+    CLINIC_NAME=os.environ.get("CLINIC_NAME", "SmileCare"),
+    PRIVACY_CONTACT=os.environ.get("PRIVACY_CONTACT", "the clinic administrator"),
     SESSION_COOKIE_HTTPONLY=True,
     SESSION_COOKIE_SAMESITE="Lax",
     SESSION_COOKIE_SECURE=os.environ.get("COOKIE_SECURE") == "1",
@@ -50,11 +56,17 @@ ADMIN_USERNAME = os.environ.get("ADMIN_USERNAME")
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD")
 
 csrf = CSRFProtect(app)
-limiter = Limiter(key_func=get_remote_address, app=app, storage_uri="memory://")
+limiter = Limiter(
+    key_func=get_remote_address,
+    app=app,
+    storage_uri=os.environ.get("RATELIMIT_STORAGE_URI", "memory://"),
+)
+logging.basicConfig(level=os.environ.get("LOG_LEVEL", "INFO"))
 MAX_PER_DAY = 15
 SLOT_MINUTES = 15
 REQUEST_COOLDOWN_DAYS = 30
 CLINIC_DAYS = {0, 2, 4}  # Monday, Wednesday, Friday
+VALID_CATEGORIES = {"Regular", "PWD", "Senior Citizen"}
 SLOT_TIMES = [
     f"{hour:02d}:{minute:02d}"
     for hour in range(8, 12)
@@ -62,11 +74,70 @@ SLOT_TIMES = [
 ]
 
 
+class CompatibleRow(dict):
+    """A row that works with existing SQLite-style name and numeric lookups."""
+
+    def __getitem__(self, key):
+        if isinstance(key, int):
+            return list(self.values())[key]
+        return super().__getitem__(key)
+
+
+def postgres_row_factory(cursor):
+    columns = [column.name for column in cursor.description]
+    return lambda values: CompatibleRow(zip(columns, values))
+
+
+class PostgresDatabase:
+    is_postgres = True
+
+    def __init__(self, connection):
+        self.connection = connection
+
+    def execute(self, query, params=None):
+        # The application uses SQLite's ? placeholders. Psycopg uses %s.
+        return self.connection.execute(query.replace("?", "%s"), params or ())
+
+    def commit(self):
+        self.connection.commit()
+
+    def rollback(self):
+        self.connection.rollback()
+
+    def close(self):
+        self.connection.close()
+
+
+def using_postgres(database=None):
+    return getattr(database or db(), "is_postgres", False)
+
+
 def db():
     if "db" not in g:
-        g.db = sqlite3.connect(app.config["DATABASE"])
-        g.db.row_factory = sqlite3.Row
+        if app.config["DATABASE_URL"]:
+            connection = postgres_connect(
+                app.config["DATABASE_URL"],
+                autocommit=True,
+                row_factory=postgres_row_factory,
+            )
+            connection.execute("SET TIME ZONE 'Asia/Manila'")
+            g.db = PostgresDatabase(connection)
+        else:
+            g.db = sqlite3.connect(app.config["DATABASE"])
+            g.db.row_factory = sqlite3.Row
     return g.db
+
+
+def begin_write_transaction(database):
+    database.execute("BEGIN" if using_postgres(database) else "BEGIN IMMEDIATE")
+
+
+def insert_and_get_id(database, statement, parameters):
+    cursor = database.execute(
+        f"{statement.rstrip()} RETURNING id" if using_postgres(database) else statement,
+        parameters,
+    )
+    return cursor.fetchone()["id"] if using_postgres(database) else cursor.lastrowid
 
 
 @app.teardown_appcontext
@@ -76,9 +147,96 @@ def close_db(_error):
         connection.close()
 
 
+def create_postgres_schema(database):
+    """Create the production PostgreSQL schema for a fresh hosted database."""
+    statements = [
+        """
+        CREATE TABLE IF NOT EXISTS users (
+            id BIGSERIAL PRIMARY KEY,
+            username TEXT NOT NULL UNIQUE,
+            display_name TEXT,
+            password_hash TEXT NOT NULL,
+            role TEXT NOT NULL CHECK(role IN ('admin', 'scheduler')),
+            is_active INTEGER NOT NULL DEFAULT 1,
+            last_seen_appointment_id INTEGER NOT NULL DEFAULT 0,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS appointments (
+            id BIGSERIAL PRIMARY KEY,
+            last_name TEXT NOT NULL, first_name TEXT NOT NULL, middle_initial TEXT,
+            birth_date TEXT NOT NULL, barangay TEXT NOT NULL, category TEXT NOT NULL,
+            contact_number TEXT NOT NULL, contact_key TEXT, email TEXT,
+            appointment_date TEXT NOT NULL, appointment_time TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'Pending', status_reason TEXT,
+            staff_notes TEXT, updated_at TIMESTAMPTZ,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(appointment_date, appointment_time)
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS client_requests (
+            id BIGSERIAL PRIMARY KEY,
+            request_code TEXT NOT NULL UNIQUE,
+            last_name TEXT NOT NULL, first_name TEXT NOT NULL, middle_initial TEXT,
+            birth_date TEXT NOT NULL, barangay TEXT NOT NULL, category TEXT NOT NULL,
+            contact_number TEXT NOT NULL, contact_key TEXT NOT NULL, email TEXT,
+            privacy_consent INTEGER NOT NULL DEFAULT 0,
+            consent_at TIMESTAMPTZ,
+            status TEXT NOT NULL DEFAULT 'Waiting for schedule', status_reason TEXT,
+            scheduled_appointment_id BIGINT UNIQUE, scheduled_at TIMESTAMPTZ,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS audit_events (
+            id BIGSERIAL PRIMARY KEY, user_id BIGINT, action TEXT NOT NULL,
+            appointment_id BIGINT, target_user_id BIGINT, details TEXT,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS appointment_history (
+            id BIGSERIAL PRIMARY KEY, appointment_id BIGINT NOT NULL, user_id BIGINT,
+            action TEXT NOT NULL, old_status TEXT, new_status TEXT,
+            old_date TEXT, old_time TEXT, new_date TEXT, new_time TEXT,
+            reason TEXT, notes TEXT,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        """,
+        "CREATE INDEX IF NOT EXISTS idx_client_requests_status ON client_requests (status)",
+        "CREATE INDEX IF NOT EXISTS idx_client_requests_contact_key ON client_requests (contact_key)",
+        "CREATE INDEX IF NOT EXISTS idx_appointments_date ON appointments (appointment_date)",
+        "CREATE INDEX IF NOT EXISTS idx_appointments_status ON appointments (status)",
+        "CREATE INDEX IF NOT EXISTS idx_appointments_contact_key ON appointments (contact_key)",
+        "CREATE INDEX IF NOT EXISTS idx_appointment_history_appointment ON appointment_history (appointment_id, id DESC)",
+    ]
+    for statement in statements:
+        database.execute(statement)
+
+
+def table_columns(database, table_name):
+    if using_postgres(database):
+        rows = database.execute(
+            """
+            SELECT column_name AS name
+            FROM information_schema.columns
+            WHERE table_schema='public' AND table_name=?
+            """,
+            (table_name,),
+        ).fetchall()
+    else:
+        rows = database.execute(f"PRAGMA table_info({table_name})").fetchall()
+    return {row["name"] for row in rows}
+
+
 def init_db():
     database = db()
-    database.executescript("""
+    if using_postgres(database):
+        create_postgres_schema(database)
+    else:
+        database.executescript("""
         CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             username TEXT NOT NULL UNIQUE,
@@ -109,6 +267,8 @@ def init_db():
             contact_number TEXT NOT NULL,
             contact_key TEXT NOT NULL,
             email TEXT,
+            privacy_consent INTEGER NOT NULL DEFAULT 0,
+            consent_at TEXT,
             status TEXT NOT NULL DEFAULT 'Waiting for schedule',
             status_reason TEXT,
             scheduled_appointment_id INTEGER UNIQUE,
@@ -151,8 +311,8 @@ def init_db():
         );
         CREATE INDEX IF NOT EXISTS idx_appointment_history_appointment
         ON appointment_history (appointment_id, id DESC);
-    """)
-    columns = {row["name"] for row in database.execute("PRAGMA table_info(appointments)").fetchall()}
+        """)
+    columns = table_columns(database, "appointments")
     if "contact_key" not in columns:
         database.execute("ALTER TABLE appointments ADD COLUMN contact_key TEXT")
     if "status_reason" not in columns:
@@ -170,15 +330,17 @@ def init_db():
             (normalize_contact(row["contact_number"]), row["id"]),
         )
 
-    request_columns = {
-        row["name"] for row in database.execute("PRAGMA table_info(client_requests)").fetchall()
-    }
+    request_columns = table_columns(database, "client_requests")
     if "status_reason" not in request_columns:
         database.execute("ALTER TABLE client_requests ADD COLUMN status_reason TEXT")
     if "scheduled_at" not in request_columns:
         database.execute("ALTER TABLE client_requests ADD COLUMN scheduled_at TEXT")
+    if "privacy_consent" not in request_columns:
+        database.execute("ALTER TABLE client_requests ADD COLUMN privacy_consent INTEGER NOT NULL DEFAULT 0")
+    if "consent_at" not in request_columns:
+        database.execute("ALTER TABLE client_requests ADD COLUMN consent_at TEXT")
 
-    user_columns = {row["name"] for row in database.execute("PRAGMA table_info(users)").fetchall()}
+    user_columns = table_columns(database, "users")
     if "last_seen_appointment_id" not in user_columns:
         database.execute(
             "ALTER TABLE users ADD COLUMN last_seen_appointment_id INTEGER NOT NULL DEFAULT 0"
@@ -343,13 +505,22 @@ def build_analytics(start_date, end_date, trend):
     database = db()
     request_params = (start_date, end_date)
     appointment_params = (start_date, end_date)
-    bucket_expression = {
-        "daily": "date({column})",
-        "weekly": "strftime('%Y-W%W', {column})",
-        "monthly": "strftime('%Y-%m', {column})",
-    }[trend]
+    if using_postgres(database):
+        bucket_expression = {
+            "daily": "TO_CHAR({column}, 'YYYY-MM-DD')",
+            "weekly": "TO_CHAR({column}, 'IYYY-\"W\"IW')",
+            "monthly": "TO_CHAR({column}, 'YYYY-MM')",
+        }[trend]
+    else:
+        bucket_expression = {
+            "daily": "date({column})",
+            "weekly": "strftime('%Y-W%W', {column})",
+            "monthly": "strftime('%Y-%m', {column})",
+        }[trend]
     request_bucket = bucket_expression.format(column="created_at")
-    appointment_bucket = bucket_expression.format(column="appointment_date")
+    appointment_bucket = bucket_expression.format(
+        column="appointment_date::date" if using_postgres(database) else "appointment_date"
+    )
 
     requests_received = database.execute(
         """
@@ -401,9 +572,14 @@ def build_analytics(start_date, end_date, trend):
     completed_service_rate = round(100 * served / appointments_scheduled, 1) if appointments_scheduled else 0
     cancellation_rate = round(100 * cancelled / outcome_total, 1) if outcome_total else 0
     no_show_rate = round(100 * no_shows / outcome_total, 1) if outcome_total else 0
+    average_wait_expression = (
+        "ROUND(AVG((EXTRACT(EPOCH FROM (scheduled_at - created_at)) / 3600)::numeric), 1)"
+        if using_postgres(database)
+        else "ROUND(AVG((julianday(scheduled_at) - julianday(created_at)) * 24), 1)"
+    )
     average_wait_hours = database.execute(
-        """
-        SELECT ROUND(AVG((julianday(scheduled_at) - julianday(created_at)) * 24), 1)
+        f"""
+        SELECT {average_wait_expression}
         FROM client_requests
         WHERE scheduled_at IS NOT NULL
           AND date(created_at) BETWEEN ? AND ?
@@ -465,9 +641,14 @@ def build_analytics(start_date, end_date, trend):
     for item in trends:
         item["width"] = max(4, round(100 * item["requests"] / max_trend))
 
+    weekday_expression = (
+        "EXTRACT(DOW FROM appointment_date::date)::text"
+        if using_postgres(database)
+        else "strftime('%w', appointment_date)"
+    )
     busiest_day = database.execute(
         """
-        SELECT strftime('%w', appointment_date) AS weekday, COUNT(*) AS count
+        SELECT """ + weekday_expression + """ AS weekday, COUNT(*) AS count
         FROM appointments
         WHERE appointment_date BETWEEN ? AND ?
         GROUP BY weekday
@@ -607,12 +788,54 @@ def handle_csrf_error(_error):
     return redirect(url_for("request_appointment"))
 
 
+@app.get("/privacy")
+def privacy_notice():
+    return render_template("privacy.html")
+
+
+@app.get("/health")
+def health_check():
+    """Public, non-sensitive readiness check for the hosting platform."""
+    try:
+        db().execute("SELECT 1").fetchone()
+        return {"status": "ok", "database": "connected"}, 200
+    except Exception:
+        app.logger.exception("Health check failed")
+        return {"status": "unhealthy"}, 503
+
+
+@app.after_request
+def add_security_headers(response):
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("X-Frame-Options", "DENY")
+    response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+    response.headers.setdefault("Permissions-Policy", "geolocation=(), microphone=(), camera=()")
+    if request.is_secure:
+        response.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+    return response
+
+
 def valid_clinic_date(value):
     try:
         selected = datetime.strptime(value, "%Y-%m-%d").date()
         return selected >= date.today() and selected.weekday() in CLINIC_DAYS
     except (TypeError, ValueError):
         return False
+
+
+def valid_birth_date(value):
+    try:
+        birth_date = datetime.strptime(value, "%Y-%m-%d").date()
+        return date.today() >= birth_date >= date.today() - timedelta(days=130 * 366)
+    except (TypeError, ValueError):
+        return False
+
+
+def valid_email(value):
+    return not value or (
+        len(value) <= 254
+        and bool(re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", value))
+    )
 
 
 def normalize_contact(value):
@@ -673,27 +896,43 @@ def request_appointment():
             "contact_number",
         ]
         fields["contact_key"] = normalize_contact(fields["contact_number"])
+        fields["privacy_consent"] = request.form.get("privacy_consent") == "on"
+        cooldown_cutoff = (datetime.now() - timedelta(days=REQUEST_COOLDOWN_DAYS)).strftime(
+            "%Y-%m-%d %H:%M:%S"
+        )
         recent_request = db().execute(
             """
             SELECT 1
             FROM client_requests
-            WHERE contact_key=? AND datetime(created_at) >= datetime('now', ?)
+            WHERE contact_key=? AND created_at >= ?
             """,
-            (fields["contact_key"], f"-{REQUEST_COOLDOWN_DAYS} days"),
+            (fields["contact_key"], cooldown_cutoff),
         ).fetchone()
         recent_appointment = db().execute(
             """
             SELECT 1
             FROM appointments
-            WHERE contact_key=? AND datetime(created_at) >= datetime('now', ?)
+            WHERE contact_key=? AND created_at >= ?
             """,
-            (fields["contact_key"], f"-{REQUEST_COOLDOWN_DAYS} days"),
+            (fields["contact_key"], cooldown_cutoff),
         ).fetchone()
 
         if any(not fields[name] for name in required):
             flash("Complete all required fields.", "error")
+        elif any(len(fields[name]) > 80 for name in ("last_name", "first_name")) or len(fields["middle_initial"]) > 5:
+            flash("Please use a shorter client name.", "error")
+        elif not 2 <= len(fields["barangay"]) <= 100:
+            flash("Enter a valid barangay name.", "error")
+        elif not valid_birth_date(fields["birth_date"]):
+            flash("Enter a valid birth date.", "error")
+        elif fields["category"] not in VALID_CATEGORIES:
+            flash("Choose a valid client sector.", "error")
+        elif not valid_email(fields["email"]):
+            flash("Enter a valid email address or leave it blank.", "error")
         elif not re.fullmatch(r"\d{11}", fields["contact_number"]):
             flash("Enter an 11-digit contact number using numbers only.", "error")
+        elif not fields["privacy_consent"]:
+            flash("You must agree to the Privacy Notice before submitting a request.", "error")
         elif recent_request or recent_appointment:
             flash(
                 f"A request using this contact number was already submitted within the last "
@@ -702,22 +941,26 @@ def request_appointment():
             )
         else:
             fields["request_code"] = generate_request_code()
-            cursor = db().execute(
+            request_id = insert_and_get_id(
+                db(),
                 """
                 INSERT INTO client_requests (
                     request_code, last_name, first_name, middle_initial, birth_date,
-                    barangay, category, contact_number, contact_key, email
-                ) VALUES (
-                    :request_code, :last_name, :first_name, :middle_initial, :birth_date,
-                    :barangay, :category, :contact_number, :contact_key, :email
-                )
+                    barangay, category, contact_number, contact_key, email,
+                    privacy_consent, consent_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
                 """,
-                fields,
+                (
+                    fields["request_code"], fields["last_name"], fields["first_name"],
+                    fields["middle_initial"], fields["birth_date"], fields["barangay"],
+                    fields["category"], fields["contact_number"], fields["contact_key"],
+                    fields["email"], int(fields["privacy_consent"]),
+                ),
             )
             db().commit()
             fields["submitted_at"] = db().execute(
                 "SELECT created_at FROM client_requests WHERE id=?",
-                (cursor.lastrowid,),
+                (request_id,),
             ).fetchone()[0]
             return render_template("success.html", client_request=fields)
 
@@ -910,7 +1153,7 @@ def accounts():
                 current_max_id = db().execute(
                     "SELECT COALESCE(MAX(id), 0) FROM client_requests"
                 ).fetchone()[0]
-                cursor = db().execute(
+                new_user_id = insert_and_get_id(db(),
                     """
                     INSERT INTO users (
                         username,
@@ -930,13 +1173,13 @@ def accounts():
                 )
                 audit(
                     "account_created",
-                    target_user_id=cursor.lastrowid,
+                    target_user_id=new_user_id,
                     details=f"role={role}; username={username}",
                 )
                 db().commit()
                 flash("Account created successfully.", "success")
                 return redirect(url_for("accounts"))
-            except sqlite3.IntegrityError:
+            except (sqlite3.IntegrityError, PostgresIntegrityError):
                 flash("That username already exists.", "error")
 
     users = db().execute(
@@ -1064,7 +1307,7 @@ def schedule_request(request_id):
         SELECT id
         FROM client_requests
         WHERE status='Waiting for schedule'
-        ORDER BY datetime(created_at) ASC, id ASC
+        ORDER BY created_at ASC, id ASC
         LIMIT 1
         """
     ).fetchone()
@@ -1087,7 +1330,7 @@ def schedule_request(request_id):
         database = db()
 
         try:
-            database.execute("BEGIN IMMEDIATE")
+            begin_write_transaction(database)
             fresh_request = database.execute(
                 """
                 SELECT *
@@ -1107,7 +1350,7 @@ def schedule_request(request_id):
                 SELECT id
                 FROM client_requests
                 WHERE status='Waiting for schedule'
-                ORDER BY datetime(created_at) ASC, id ASC
+                ORDER BY created_at ASC, id ASC
                 LIMIT 1
                 """
             ).fetchone()
@@ -1130,7 +1373,7 @@ def schedule_request(request_id):
                 flash("This day has reached its client limit.", "error")
                 return redirect(url_for("appointments"))
 
-            cursor = database.execute(
+            appointment_id = insert_and_get_id(database,
                 """
                 INSERT INTO appointments (
                     last_name, first_name, middle_initial, birth_date, barangay,
@@ -1159,7 +1402,7 @@ def schedule_request(request_id):
                 SET status='Scheduled', scheduled_appointment_id=?, scheduled_at=CURRENT_TIMESTAMP
                 WHERE id=? AND status='Waiting for schedule'
                 """,
-                (cursor.lastrowid, request_id),
+                (appointment_id, request_id),
             )
 
             if updated.rowcount != 1:
@@ -1168,7 +1411,7 @@ def schedule_request(request_id):
                 return redirect(url_for("appointments"))
 
             record_appointment_history(
-                cursor.lastrowid,
+                appointment_id,
                 "Scheduled",
                 new_status="Approved",
                 new_date=appointment_date,
@@ -1177,13 +1420,13 @@ def schedule_request(request_id):
             )
             audit(
                 "client_scheduled",
-                appointment_id=cursor.lastrowid,
+                appointment_id=appointment_id,
                 details=f"client_request_id={request_id}; date={appointment_date}; time={appointment_time}",
             )
             database.commit()
             flash("Client schedule assigned successfully.", "success")
             return redirect(url_for("appointments"))
-        except sqlite3.IntegrityError:
+        except (sqlite3.IntegrityError, PostgresIntegrityError):
             database.rollback()
             flash("That time was just taken. Choose another.", "error")
 
@@ -1199,7 +1442,7 @@ def reject_request(request_id):
         SELECT id
         FROM client_requests
         WHERE status='Waiting for schedule'
-        ORDER BY datetime(created_at) ASC, id ASC
+        ORDER BY created_at ASC, id ASC
         LIMIT 1
         """
     ).fetchone()
@@ -1256,7 +1499,7 @@ def appointments():
         SELECT *
         FROM client_requests
         WHERE status='Waiting for schedule'
-        ORDER BY datetime(created_at) ASC, id ASC
+        ORDER BY created_at ASC, id ASC
         """
     ).fetchall()
     rejected_requests = db().execute(
@@ -1264,7 +1507,7 @@ def appointments():
         SELECT *
         FROM client_requests
         WHERE status='Rejected'
-        ORDER BY datetime(created_at) DESC, id DESC
+        ORDER BY created_at DESC, id DESC
         LIMIT 50
         """
     ).fetchall()
@@ -1307,7 +1550,7 @@ def manage_appointment(appointment_id):
 
     database = db()
     try:
-        database.execute("BEGIN IMMEDIATE")
+        begin_write_transaction(database)
         appointment = database.execute(
             "SELECT * FROM appointments WHERE id=?", (appointment_id,)
         ).fetchone()
@@ -1393,7 +1636,7 @@ def manage_appointment(appointment_id):
         )
         database.commit()
         flash("Appointment updated successfully.", "success")
-    except sqlite3.IntegrityError:
+    except (sqlite3.IntegrityError, PostgresIntegrityError):
         database.rollback()
         flash("That new schedule was just taken. Please try another time.", "error")
     return redirect(url_for("appointments"))

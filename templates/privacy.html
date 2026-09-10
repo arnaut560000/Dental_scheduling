@@ -1,0 +1,26 @@
+{% extends 'base.html' %}
+
+{% block title %}Privacy Notice · {{ config.CLINIC_NAME }}{% endblock %}
+
+{% block content %}
+  <section class="card confirmation privacy-notice">
+    <p class="eyebrow">PRIVACY NOTICE</p>
+    <h1>{{ config.CLINIC_NAME }} appointment requests</h1>
+    <p>We collect your name, birth date, barangay, sector, phone number, optional email address, and appointment-request details only to manage free tooth-removal assistance and contact you about scheduling.</p>
+
+    <h2>How we use your information</h2>
+    <p>Authorized clinic staff use your information to review your request, assign or change an appointment, communicate appointment updates, prepare clinic schedules, and prepare aggregated clinic reports.</p>
+
+    <h2>Who can access it</h2>
+    <p>Only authorized clinic administrators and schedulers can access appointment information. We do not sell your personal information.</p>
+
+    <h2>Keeping information safe</h2>
+    <p>The clinic uses password-protected staff accounts, access controls, and audit records. Records are retained only for as long as needed for clinic operations and applicable recordkeeping requirements, then archived or securely deleted.</p>
+
+    <h2>Your choices</h2>
+    <p>You may ask about your appointment information or request correction by contacting {{ config.PRIVACY_CONTACT }}. You may decline this online form and contact the clinic directly instead.</p>
+
+    <p class="notice">By checking the consent box on the request form, you agree to this processing for your appointment request.</p>
+    <a class="button-link" href="{{ url_for('request_appointment') }}">Back to request form</a>
+  </section>
+{% endblock %}

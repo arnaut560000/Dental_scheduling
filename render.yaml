@@ -3,10 +3,11 @@ services:
     name: smilecare-scheduling
     runtime: python
     buildCommand: pip install -r requirements.txt
-    startCommand: gunicorn app:app
+    startCommand: gunicorn --bind 0.0.0.0:$PORT app:app
+    healthCheckPath: /health
     envVars:
-      - key: DATABASE_PATH
-        value: /var/data/dental_schedule.db
+      - key: DATABASE_URL
+        sync: false
       - key: ADMIN_USERNAME
         sync: false
       - key: ADMIN_PASSWORD
@@ -15,7 +16,7 @@ services:
         generateValue: true
       - key: COOKIE_SECURE
         value: "1"
-    disk:
-      name: clinic-data
-      mountPath: /var/data
-      sizeGB: 1
+      - key: CLINIC_NAME
+        value: "SmileCare"
+      - key: PRIVACY_CONTACT
+        sync: false
