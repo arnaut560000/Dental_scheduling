@@ -3,24 +3,100 @@
 {% block title %}Request Assistance · SmileCare{% endblock %}
 
 {% block content %}
-  <section class="hero">
-    <p class="eyebrow">ONLINE REQUEST</p>
-    <h1>Request free tooth removal assistance.</h1>
-    <p>Submit your information below. A clinic scheduler will contact you and assign your appointment schedule.</p>
+  <section class="request-hero" aria-labelledby="request-page-title">
+    <div>
+      <p class="eyebrow">ONLINE DENTAL REQUEST</p>
+      <h1 id="request-page-title">Request free tooth removal assistance.</h1>
+      <p>Send your details to the clinic. A scheduler will review your request and contact you once an appointment schedule is available.</p>
+    </div>
+    <ol class="request-steps" aria-label="How the request works">
+      <li><span>1</span><div><strong>Submit your request</strong><small>Complete the form below.</small></div></li>
+      <li><span>2</span><div><strong>Wait for review</strong><small>Requests are handled in submission order.</small></div></li>
+      <li><span>3</span><div><strong>Receive your schedule</strong><small>A clinic scheduler will contact you.</small></div></li>
+    </ol>
   </section>
 
   <form class="card appointment-form" method="post">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-    <h2>Client information</h2>
-    <div class="form-grid">
-      <label>Last name*<input name="last_name" maxlength="80" required value="{{ request.form.last_name }}"></label>
-      <label>First name*<input name="first_name" maxlength="80" required value="{{ request.form.first_name }}"></label>
-      <label>Middle initial<input name="middle_initial" maxlength="5" value="{{ request.form.middle_initial }}"></label>
-      <label>Birth date*<input type="date" name="birth_date" required value="{{ request.form.birth_date }}"></label>
-      <label>Barangay*<input name="barangay" maxlength="100" required value="{{ request.form.barangay }}"></label>
+
+    <div class="form-intro">
+      <div>
+        <p class="eyebrow">CLIENT INFORMATION</p>
+        <h2>Tell us about the client</h2>
+        <p>Fields marked with <strong>*</strong> are required.</p>
+      </div>
+      <p class="form-help">Please enter accurate details so the clinic can contact the right person.</p>
+    </div>
+
+    <section class="form-section" aria-labelledby="personal-details-title">
+      <div class="section-heading">
+        <span class="section-number">1</span>
+        <div>
+          <h3 id="personal-details-title">Personal details</h3>
+          <p>Use the client’s name as it appears on their records.</p>
+        </div>
+      </div>
+      <div class="form-grid">
+        <label>Last name*<input name="last_name" maxlength="80" required value="{{ request.form.last_name }}"></label>
+        <label>First name*<input name="first_name" maxlength="80" required value="{{ request.form.first_name }}"></label>
+        <label>Middle initial<input name="middle_initial" maxlength="5" value="{{ request.form.middle_initial }}"></label>
+        <label>Birth date*<input type="date" name="birth_date" required value="{{ request.form.birth_date }}"></label>
+        <fieldset class="choice-group gender-group">
+          <legend>Gender*</legend>
+          <div class="option-list gender-options">
+            {% for gender in ['Female', 'Male', 'Prefer not to say'] %}
+              <label class="choice-option">
+                <input type="radio" name="gender" value="{{ gender }}" required {% if request.form.gender == gender %}checked{% endif %}>
+                <span>{{ gender }}</span>
+              </label>
+            {% endfor %}
+          </div>
+        </fieldset>
+      </div>
+    </section>
+
+    <section class="form-section" aria-labelledby="contact-details-title">
+      <div class="section-heading">
+        <span class="section-number">2</span>
+        <div>
+          <h3 id="contact-details-title">Contact and location</h3>
+          <p>This is how the clinic will reach the client about the schedule.</p>
+        </div>
+      </div>
+      <div class="form-grid">
+        <label>Barangay*<input name="barangay" maxlength="100" required value="{{ request.form.barangay }}"></label>
+        <label>
+          Contact number*
+          <input
+            type="tel"
+            name="contact_number"
+            inputmode="numeric"
+            autocomplete="tel"
+            pattern="[0-9]{11}"
+            minlength="11"
+            maxlength="11"
+            placeholder="09171234567"
+            title="Enter exactly 11 digits."
+            required
+            value="{{ request.form.contact_number }}"
+            oninput="this.value = this.value.replace(/\D/g, '').slice(0, 11)"
+          >
+          <small>Enter exactly 11 digits.</small>
+        </label>
+        <label class="full-width">Email address <small>Optional — used only if the clinic needs another way to contact you.</small><input type="email" name="email" autocomplete="email" value="{{ request.form.email }}"></label>
+      </div>
+    </section>
+
+    <section class="form-section sector-section" aria-labelledby="sector-title">
+      <div class="section-heading">
+        <span class="section-number">3</span>
+        <div>
+          <h3 id="sector-title">Client sector</h3>
+          <p>Select the one sector that best describes the client.</p>
+        </div>
+      </div>
       <fieldset class="choice-group sector-group">
         <legend>Sector*</legend>
-        <span class="notice">Choose one sector.</span>
         <div class="option-list sector-options">
           {% for category in ['Regular', 'PWD', 'Senior Citizen'] %}
             <label class="choice-option">
@@ -30,42 +106,18 @@
           {% endfor %}
         </div>
       </fieldset>
-      <fieldset class="choice-group">
-        <legend>Gender*</legend>
-        <div class="option-list">
-          {% for gender in ['Female', 'Male', 'Prefer not to say'] %}
-            <label class="choice-option">
-              <input type="radio" name="gender" value="{{ gender }}" required {% if request.form.gender == gender %}checked{% endif %}>
-              <span>{{ gender }}</span>
-            </label>
-          {% endfor %}
-        </div>
-      </fieldset>
-      <label>
-        Contact number*
-        <input
-          type="tel"
-          name="contact_number"
-          inputmode="numeric"
-          autocomplete="tel"
-          pattern="[0-9]{11}"
-          minlength="11"
-          maxlength="11"
-          placeholder="09171234567"
-          title="Enter exactly 11 digits."
-          required
-          value="{{ request.form.contact_number }}"
-          oninput="this.value = this.value.replace(/\D/g, '').slice(0, 11)"
-        >
+    </section>
+
+    <div class="request-submit-area">
+      <label class="consent-check">
+        <input type="checkbox" name="privacy_consent" required {% if request.form.privacy_consent %}checked{% endif %}>
+        <span>I have read and agree to the <a href="{{ url_for('privacy_notice') }}" target="_blank" rel="noopener">Privacy Notice</a> and allow the clinic to use my information to process this appointment request.</span>
       </label>
-      <label>Email address<input type="email" name="email" value="{{ request.form.email }}"></label>
+      <div class="submit-row">
+        <p class="notice">A scheduler will manually assign your appointment date and time. One request per contact number is allowed every {{ cooldown_days }} days.</p>
+        <button type="submit">Submit request</button>
+      </div>
     </div>
-    <label class="consent-check">
-      <input type="checkbox" name="privacy_consent" required {% if request.form.privacy_consent %}checked{% endif %}>
-      <span>I have read and agree to the <a href="{{ url_for('privacy_notice') }}" target="_blank" rel="noopener">Privacy Notice</a> and allow the clinic to use my information to process this appointment request.</span>
-    </label>
-    <button type="submit">Submit request</button>
-    <p class="notice">A scheduler will manually assign your appointment date and time. One request per contact number is allowed every {{ cooldown_days }} days.</p>
   </form>
 {% endblock %}
 
