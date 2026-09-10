@@ -26,12 +26,16 @@
               <td>{{ client_request.barangay }}<br>{{ client_request.category }}</td>
               <td>{{ client_request.contact_number }}<br>{{ client_request.email }}</td>
               <td>
-                <button
-                  class="small schedule-button"
-                  type="button"
-                  data-request-id="{{ client_request.id }}"
-                  data-client-name="{{ client_request.last_name }}, {{ client_request.first_name }} {{ client_request.middle_initial or '' }}"
-                >Schedule</button>
+                {% if loop.first %}
+                  <button
+                    class="small schedule-button"
+                    type="button"
+                    data-request-id="{{ client_request.id }}"
+                    data-client-name="{{ client_request.last_name }}, {{ client_request.first_name }} {{ client_request.middle_initial or '' }}"
+                  >Schedule</button>
+                {% else %}
+                  <span class="notice">Waiting for earlier clients</span>
+                {% endif %}
               </td>
             </tr>
           {% endfor %}

@@ -707,6 +707,23 @@ def schedule_request(request_id):
         flash("This client request is no longer waiting for a schedule.", "error")
         return redirect(url_for("appointments"))
 
+    first_waiting_request = db().execute(
+        """
+        SELECT id
+        FROM client_requests
+        WHERE status='Waiting for schedule'
+        ORDER BY datetime(created_at) ASC, id ASC
+        LIMIT 1
+        """
+    ).fetchone()
+
+    if not first_waiting_request or first_waiting_request["id"] != request_id:
+        flash(
+            "Schedule the first client in the queue before scheduling later requests.",
+            "error",
+        )
+        return redirect(url_for("appointments"))
+
     appointment_date = request.form.get("appointment_date", "")
     appointment_time = request.form.get("appointment_time", "")
 
@@ -731,6 +748,24 @@ def schedule_request(request_id):
             if not fresh_request:
                 database.rollback()
                 flash("This request was already scheduled.", "error")
+                return redirect(url_for("appointments"))
+
+            first_waiting_request = database.execute(
+                """
+                SELECT id
+                FROM client_requests
+                WHERE status='Waiting for schedule'
+                ORDER BY datetime(created_at) ASC, id ASC
+                LIMIT 1
+                """
+            ).fetchone()
+
+            if not first_waiting_request or first_waiting_request["id"] != request_id:
+                database.rollback()
+                flash(
+                    "Schedule the first client in the queue before scheduling later requests.",
+                    "error",
+                )
                 return redirect(url_for("appointments"))
 
             count = database.execute(
