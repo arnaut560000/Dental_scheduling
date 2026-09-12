@@ -8,6 +8,7 @@ SmileCare is a clinic request and staff-scheduling system for free tooth-removal
 - First-come-first-served scheduling queue
 - Staff accounts, roles, password reset, and last-admin protection
 - Appointment rescheduling, cancellation, no-show, rejection reasons, and staff-only notes
+- Cancelled and no-show appointments retain their history but do not reserve a future slot
 - Permanent appointment change history and audit events
 - Client search, date/status filtering, analytics, CSV export, and PDF export
 - `/health` endpoint for hosting health checks
@@ -48,6 +49,18 @@ Do not deploy the SQLite file for public use. Use a hosted PostgreSQL database a
 6. Open the generated `onrender.com` address, confirm the health check, submit a test request, and sign in as staff.
 
 The database should have automatic backups and a tested restore procedure before collecting real client information.
+
+## Database migrations and tests
+
+Database changes run once when the application process starts and are recorded in the `schema_migrations` table. They do not run while a client or staff member loads a normal page. Back up the production database before deploying a release that contains a new migration.
+
+Run the automated regression tests before every deployment:
+
+```powershell
+.\.venv\Scripts\python.exe -m unittest discover -s tests -v
+```
+
+GitHub Actions runs the same test suite on every push to `main` and on pull requests.
 
 ## Required environment variables
 

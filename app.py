@@ -67,7 +67,7 @@ SLOT_MINUTES = 15
 REQUEST_COOLDOWN_DAYS = 30
 CLINIC_DAYS = {0, 2, 4}  # Monday, Wednesday, Friday
 VALID_CATEGORIES = {"Regular", "PWD", "Senior Citizen"}
-VALID_GENDERS = {"Female", "Male", "Prefer not to say"}
+VALID_GENDERS = {"Female", "Male", "Others"}
 SLOT_TIMES = [
     f"{hour:02d}:{minute:02d}"
     for hour in range(8, 12)
@@ -176,8 +176,7 @@ def create_postgres_schema(database):
             appointment_date TEXT NOT NULL, appointment_time TEXT NOT NULL,
             status TEXT NOT NULL DEFAULT 'Pending', status_reason TEXT,
             staff_notes TEXT, updated_at TIMESTAMPTZ,
-            created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            UNIQUE(appointment_date, appointment_time)
+            created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
         )
         """,
         """
@@ -236,8 +235,7 @@ def table_columns(database, table_name):
     return {row["name"] for row in rows}
 
 
-def init_db():
-    database = db()
+def apply_initial_schema(database):
     if using_postgres(database):
         create_postgres_schema(database)
     else:
@@ -257,8 +255,7 @@ def init_db():
             contact_number TEXT NOT NULL, contact_key TEXT, email TEXT, appointment_date TEXT NOT NULL,
             appointment_time TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'Pending',
             status_reason TEXT, staff_notes TEXT, updated_at TEXT,
-            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            UNIQUE(appointment_date, appointment_time)
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
         );
         CREATE TABLE IF NOT EXISTS client_requests (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -388,9 +385,130 @@ def init_db():
     database.commit()
 
 
-@app.before_request
-def setup():
-    init_db()
+INITIAL_SCHEMA_MIGRATION = "001_initial_schema"
+ACTIVE_SLOT_MIGRATION = "002_active_appointment_slots"
+
+
+def applied_migrations(database):
+    rows = database.execute("SELECT version FROM schema_migrations").fetchall()
+    return {row["version"] for row in rows}
+
+
+def record_migration(database, version):
+    database.execute(
+        "INSERT INTO schema_migrations (version) VALUES (?)",
+        (version,),
+    )
+    database.commit()
+
+
+def sqlite_has_legacy_slot_constraint(database):
+    indexes = database.execute("PRAGMA index_list(appointments)").fetchall()
+    for index in indexes:
+        if index["origin"] != "u":
+            continue
+        index_name = index["name"]
+        columns = database.execute(f"PRAGMA index_info('{index_name}')").fetchall()
+        if [column["name"] for column in columns] == [
+            "appointment_date",
+            "appointment_time",
+        ]:
+            return True
+    return False
+
+
+def rebuild_sqlite_appointments_without_slot_constraint(database):
+    """Remove the legacy all-status slot constraint while preserving all rows."""
+    database.executescript(
+        """
+        ALTER TABLE appointments RENAME TO appointments_legacy;
+        CREATE TABLE appointments (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            last_name TEXT NOT NULL, first_name TEXT NOT NULL, middle_initial TEXT,
+            birth_date TEXT NOT NULL, gender TEXT NOT NULL, barangay TEXT NOT NULL,
+            category TEXT NOT NULL, contact_number TEXT NOT NULL, contact_key TEXT,
+            email TEXT, appointment_date TEXT NOT NULL, appointment_time TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'Pending', status_reason TEXT,
+            staff_notes TEXT, updated_at TEXT,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+        INSERT INTO appointments (
+            id, last_name, first_name, middle_initial, birth_date, gender, barangay,
+            category, contact_number, contact_key, email, appointment_date,
+            appointment_time, status, status_reason, staff_notes, updated_at, created_at
+        )
+        SELECT
+            id, last_name, first_name, middle_initial, birth_date, gender, barangay,
+            category, contact_number, contact_key, email, appointment_date,
+            appointment_time, status, status_reason, staff_notes, updated_at, created_at
+        FROM appointments_legacy;
+        DROP TABLE appointments_legacy;
+        CREATE INDEX IF NOT EXISTS idx_appointments_date ON appointments (appointment_date);
+        CREATE INDEX IF NOT EXISTS idx_appointments_status ON appointments (status);
+        CREATE INDEX IF NOT EXISTS idx_appointments_contact_key ON appointments (contact_key);
+        """
+    )
+
+
+def migrate_active_appointment_slots(database):
+    """Let cancelled/no-show appointments retain history without reserving a slot."""
+    if using_postgres(database):
+        constraints = database.execute(
+            """
+            SELECT conname, pg_get_constraintdef(oid) AS definition
+            FROM pg_constraint
+            WHERE conrelid='appointments'::regclass AND contype='u'
+            """
+        ).fetchall()
+        for constraint in constraints:
+            definition = constraint["definition"].replace('"', "")
+            if "UNIQUE (appointment_date, appointment_time)" in definition:
+                constraint_name = constraint["conname"]
+                if re.fullmatch(r"[A-Za-z0-9_]+", constraint_name):
+                    database.execute(
+                        f'ALTER TABLE appointments DROP CONSTRAINT "{constraint_name}"'
+                    )
+    elif sqlite_has_legacy_slot_constraint(database):
+        rebuild_sqlite_appointments_without_slot_constraint(database)
+
+    database.execute(
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_appointments_active_slot
+        ON appointments (appointment_date, appointment_time)
+        WHERE status IN ('Pending', 'Approved')
+        """
+    )
+
+
+def init_db():
+    """Apply each database migration once during application startup."""
+    database = db()
+    database.execute(
+        """
+        CREATE TABLE IF NOT EXISTS schema_migrations (
+            version TEXT PRIMARY KEY,
+            applied_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
+    database.commit()
+
+    locked = False
+    if using_postgres(database):
+        database.execute("SELECT pg_advisory_lock(83742619)")
+        locked = True
+    try:
+        completed = applied_migrations(database)
+        if INITIAL_SCHEMA_MIGRATION not in completed:
+            apply_initial_schema(database)
+            record_migration(database, INITIAL_SCHEMA_MIGRATION)
+            completed.add(INITIAL_SCHEMA_MIGRATION)
+        if ACTIVE_SLOT_MIGRATION not in completed:
+            migrate_active_appointment_slots(database)
+            record_migration(database, ACTIVE_SLOT_MIGRATION)
+    finally:
+        if locked:
+            database.execute("SELECT pg_advisory_unlock(83742619)")
 
 
 def login_required(view):
@@ -860,7 +978,13 @@ def monday_for(value):
 
 
 def available_slots(day):
-    rows = db().execute("SELECT appointment_time FROM appointments WHERE appointment_date = ?", (day,)).fetchall()
+    rows = db().execute(
+        """
+        SELECT appointment_time FROM appointments
+        WHERE appointment_date=? AND status IN ('Pending', 'Approved')
+        """,
+        (day,),
+    ).fetchall()
     booked = {row["appointment_time"] for row in rows}
     return [slot for slot in SLOT_TIMES if slot not in booked]
 
@@ -868,7 +992,11 @@ def available_slots(day):
 def day_schedule(day):
     """Return all clinic slots so the public calendar can label free and taken times."""
     rows = db().execute(
-        "SELECT appointment_time FROM appointments WHERE appointment_date = ?", (day,)
+        """
+        SELECT appointment_time FROM appointments
+        WHERE appointment_date=? AND status IN ('Pending', 'Approved')
+        """,
+        (day,),
     ).fetchall()
     booked = {row["appointment_time"] for row in rows}
     booked_count = len(booked)
@@ -1378,7 +1506,10 @@ def schedule_request(request_id):
                 return redirect(url_for("appointments"))
 
             count = database.execute(
-                "SELECT COUNT(*) FROM appointments WHERE appointment_date=?",
+                """
+                SELECT COUNT(*) FROM appointments
+                WHERE appointment_date=? AND status IN ('Pending', 'Approved')
+                """,
                 (appointment_date,),
             ).fetchone()[0]
 
@@ -1605,11 +1736,16 @@ def manage_appointment(appointment_id):
                 """
                 SELECT 1 FROM appointments
                 WHERE appointment_date=? AND appointment_time=? AND id<>?
+                  AND status IN ('Pending', 'Approved')
                 """,
                 (appointment_date, appointment_time, appointment_id),
             ).fetchone()
             daily_count = database.execute(
-                "SELECT COUNT(*) FROM appointments WHERE appointment_date=? AND id<>?",
+                """
+                SELECT COUNT(*) FROM appointments
+                WHERE appointment_date=? AND id<>?
+                  AND status IN ('Pending', 'Approved')
+                """,
                 (appointment_date, appointment_id),
             ).fetchone()[0]
             if same_slot or daily_count >= MAX_PER_DAY:
@@ -1800,6 +1936,10 @@ def export_day():
         mimetype="text/csv",
         headers={"Content-Disposition": f"attachment; filename={filename}"},
     )
+
+
+with app.app_context():
+    init_db()
 
 
 if __name__ == "__main__":
