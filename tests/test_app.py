@@ -128,9 +128,10 @@ class SchedulingSystemTests(unittest.TestCase):
         self.assertIn(b"REQUEST RECEIVED", response.data)
         with scheduling_app.app.app_context():
             row = scheduling_app.db().execute(
-                "SELECT gender FROM client_requests"
+                "SELECT gender, privacy_notice_version FROM client_requests"
             ).fetchone()
         self.assertEqual(row["gender"], "Others")
+        self.assertEqual(row["privacy_notice_version"], scheduling_app.PRIVACY_NOTICE_VERSION)
 
     def test_cancelled_slot_becomes_available_and_can_be_reused(self):
         appointment_date = self.next_monday()
@@ -211,6 +212,7 @@ class SchedulingSystemTests(unittest.TestCase):
         self.assertIn(scheduling_app.INITIAL_SCHEMA_MIGRATION, versions)
         self.assertIn(scheduling_app.ACTIVE_SLOT_MIGRATION, versions)
         self.assertIn(scheduling_app.CLINIC_CONFIGURATION_MIGRATION, versions)
+        self.assertIn(scheduling_app.PRIVACY_CONSENT_MIGRATION, versions)
 
         with scheduling_app.app.app_context():
             settings = {
@@ -406,6 +408,24 @@ class SchedulingSystemTests(unittest.TestCase):
             database.execute("SELECT COUNT(*) FROM appointments").fetchone()[0],
             2,
         )
+
+    def test_existing_consents_are_labelled_by_the_privacy_version_migration(self):
+        database = sqlite3.connect(":memory:")
+        database.row_factory = sqlite3.Row
+        self.addCleanup(database.close)
+        database.executescript(
+            """
+            CREATE TABLE client_requests (id INTEGER PRIMARY KEY, privacy_consent INTEGER);
+            INSERT INTO client_requests (id, privacy_consent) VALUES (1, 1), (2, 0);
+            """
+        )
+
+        scheduling_app.migrate_privacy_consent_version(database)
+        rows = database.execute(
+            "SELECT id, privacy_notice_version FROM client_requests ORDER BY id"
+        ).fetchall()
+        self.assertEqual(rows[0]["privacy_notice_version"], "legacy")
+        self.assertIsNone(rows[1]["privacy_notice_version"])
 
 
 if __name__ == "__main__":

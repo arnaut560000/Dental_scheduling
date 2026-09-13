@@ -66,6 +66,7 @@ logging.basicConfig(level=os.environ.get("LOG_LEVEL", "INFO"))
 MAX_PER_DAY = 15
 SLOT_MINUTES = 15
 REQUEST_COOLDOWN_DAYS = 30
+PRIVACY_NOTICE_VERSION = "2026-09-13"
 CLINIC_DAYS = {0, 2, 4}  # Monday, Wednesday, Friday
 VALID_CATEGORIES = {"Regular", "PWD", "Senior Citizen"}
 VALID_GENDERS = {"Female", "Male", "Others"}
@@ -199,6 +200,7 @@ def create_postgres_schema(database):
             contact_number TEXT NOT NULL, contact_key TEXT NOT NULL, email TEXT,
             privacy_consent INTEGER NOT NULL DEFAULT 0,
             consent_at TIMESTAMPTZ,
+            privacy_notice_version TEXT,
             status TEXT NOT NULL DEFAULT 'Waiting for schedule', status_reason TEXT,
             scheduled_appointment_id BIGINT UNIQUE, scheduled_at TIMESTAMPTZ,
             created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -283,6 +285,7 @@ def apply_initial_schema(database):
             email TEXT,
             privacy_consent INTEGER NOT NULL DEFAULT 0,
             consent_at TEXT,
+            privacy_notice_version TEXT,
             status TEXT NOT NULL DEFAULT 'Waiting for schedule',
             status_reason TEXT,
             scheduled_appointment_id INTEGER UNIQUE,
@@ -399,6 +402,7 @@ def apply_initial_schema(database):
 INITIAL_SCHEMA_MIGRATION = "001_initial_schema"
 ACTIVE_SLOT_MIGRATION = "002_active_appointment_slots"
 CLINIC_CONFIGURATION_MIGRATION = "003_clinic_configuration"
+PRIVACY_CONSENT_MIGRATION = "004_privacy_consent_version"
 
 DEFAULT_CLINIC_SETTINGS = {
     "clinic_days": "0,2,4",
@@ -536,6 +540,20 @@ def migrate_clinic_configuration(database):
         )
 
 
+def migrate_privacy_consent_version(database):
+    """Record the published privacy notice version accepted by each client."""
+    columns = table_columns(database, "client_requests")
+    if "privacy_notice_version" not in columns:
+        database.execute("ALTER TABLE client_requests ADD COLUMN privacy_notice_version TEXT")
+    database.execute(
+        """
+        UPDATE client_requests
+        SET privacy_notice_version='legacy'
+        WHERE privacy_consent=1 AND privacy_notice_version IS NULL
+        """
+    )
+
+
 def clinic_configuration():
     """Return validated scheduling settings, cached for the current request."""
     if "clinic_configuration" in g:
@@ -635,6 +653,10 @@ def init_db():
         if CLINIC_CONFIGURATION_MIGRATION not in completed:
             migrate_clinic_configuration(database)
             record_migration(database, CLINIC_CONFIGURATION_MIGRATION)
+            completed.add(CLINIC_CONFIGURATION_MIGRATION)
+        if PRIVACY_CONSENT_MIGRATION not in completed:
+            migrate_privacy_consent_version(database)
+            record_migration(database, PRIVACY_CONSENT_MIGRATION)
     finally:
         if locked:
             database.execute("SELECT pg_advisory_unlock(83742619)")
@@ -1060,7 +1082,7 @@ def handle_csrf_error(_error):
 
 @app.get("/privacy")
 def privacy_notice():
-    return render_template("privacy.html")
+    return render_template("privacy.html", privacy_notice_version=PRIVACY_NOTICE_VERSION)
 
 
 @app.get("/health")
@@ -1243,14 +1265,14 @@ def request_appointment():
                 INSERT INTO client_requests (
                     request_code, last_name, first_name, middle_initial, birth_date, gender,
                     barangay, category, contact_number, contact_key, email,
-                    privacy_consent, consent_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                    privacy_consent, consent_at, privacy_notice_version
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?)
                 """,
                 (
                     fields["request_code"], fields["last_name"], fields["first_name"],
                     fields["middle_initial"], fields["birth_date"], fields["gender"], fields["barangay"],
                     fields["category"], fields["contact_number"], fields["contact_key"],
-                    fields["email"], int(fields["privacy_consent"]),
+                    fields["email"], int(fields["privacy_consent"]), PRIVACY_NOTICE_VERSION,
                 ),
             )
             db().commit()
