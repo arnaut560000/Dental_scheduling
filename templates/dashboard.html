@@ -47,8 +47,8 @@
       {% for day in daily %}
         <div class="load">
           <span>{{ day.appointment_date }}</span>
-          <div><i style="width: {{ (day.count / 15 * 100)|int }}%"></i></div>
-          <b>{{ day.count }}/15</b>
+          <div><i style="width: {{ (day.count / daily_limit * 100)|int }}%"></i></div>
+          <b>{{ day.count }}/{{ daily_limit }}</b>
         </div>
       {% else %}
         <p class="empty">No schedules yet.</p>

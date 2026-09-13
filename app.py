@@ -1316,7 +1316,10 @@ def dashboard():
             "SELECT COUNT(*) FROM client_requests WHERE status='Waiting for schedule'"
         ).fetchone()[0],
         "today": database.execute(
-            "SELECT COUNT(*) FROM appointments WHERE appointment_date=?",
+            """
+            SELECT COUNT(*) FROM appointments
+            WHERE appointment_date=? AND status IN ('Pending', 'Approved')
+            """,
             (today,),
         ).fetchone()[0],
         "served": database.execute(
@@ -1328,7 +1331,7 @@ def dashboard():
         """
         SELECT *
         FROM appointments
-        WHERE appointment_date >= ?
+        WHERE appointment_date >= ? AND status IN ('Pending', 'Approved')
         ORDER BY appointment_date, appointment_time
         LIMIT 8
         """,
@@ -1339,7 +1342,7 @@ def dashboard():
         """
         SELECT appointment_date, COUNT(*) AS count
         FROM appointments
-        WHERE appointment_date >= ?
+        WHERE appointment_date >= ? AND status IN ('Pending', 'Approved')
         GROUP BY appointment_date
         ORDER BY appointment_date
         LIMIT 7
@@ -1356,6 +1359,7 @@ def dashboard():
         daily=daily,
         analytics=analytics,
         today=today,
+        daily_limit=clinic_configuration()["daily_limit"],
     )
 
 

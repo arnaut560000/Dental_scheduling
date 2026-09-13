@@ -270,6 +270,22 @@ class SchedulingSystemTests(unittest.TestCase):
         self.assertEqual(payload["max"], 3)
         self.assertEqual([slot["time"] for slot in payload["slots"]], ["09:00", "09:30"])
 
+    def test_dashboard_uses_the_saved_limit_and_active_appointments_only(self):
+        with scheduling_app.app.app_context():
+            scheduling_app.db().execute(
+                "UPDATE clinic_settings SET setting_value='4' WHERE setting_key='daily_limit'"
+            )
+            scheduling_app.db().commit()
+        appointment_date = self.next_monday()
+        self.insert_appointment(appointment_date, "08:00", "Approved")
+        self.insert_appointment(appointment_date, "08:15", "Cancelled")
+        self.sign_in_as_scheduler()
+
+        page = self.client.get("/admin")
+        self.assertIn(b"1/4", page.data)
+        self.assertNotIn(b"2/4", page.data)
+        self.assertNotIn(b"Cancelled</span>", page.data)
+
     def test_admin_can_update_schedule_and_block_a_date(self):
         self.sign_in_as_admin()
         page = self.client.get("/admin/settings")
