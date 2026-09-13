@@ -2062,7 +2062,7 @@ def notifications():
     rows = db().execute(
         """
         SELECT id, last_name, first_name, middle_initial, category,
-               barangay, contact_number, created_at
+               barangay, created_at
         FROM client_requests
         WHERE id > ?
         ORDER BY id
@@ -2077,7 +2077,6 @@ def notifications():
                 "name": f'{row["last_name"]}, {row["first_name"]} {row["middle_initial"] or ""}'.strip(),
                 "category": row["category"],
                 "barangay": row["barangay"],
-                "contact_number": row["contact_number"],
                 "submitted_at": row["created_at"],
             }
             for row in rows

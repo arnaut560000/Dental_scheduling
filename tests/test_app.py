@@ -89,18 +89,19 @@ class SchedulingSystemTests(unittest.TestCase):
                 """
                 INSERT INTO appointments (
                     last_name, first_name, birth_date, gender, barangay, category,
-                    contact_number, contact_key, appointment_date, appointment_time, status
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    contact_number, contact_key, email, appointment_date, appointment_time, status
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     "Client",
                     status,
-                    "2000-01-01",
+                    "1988-04-05",
                     "Others",
                     "Barangay One",
                     "Regular",
                     "09171234567",
                     "09171234567",
+                    "scheduler-hidden@example.com",
                     appointment_date.isoformat(),
                     appointment_time,
                     status,
@@ -148,6 +149,56 @@ class SchedulingSystemTests(unittest.TestCase):
         first_slot = next(slot for slot in payload["slots"] if slot["time"] == "08:00")
         self.assertEqual(payload["count"], 1)
         self.assertEqual(first_slot["state"], "taken")
+
+    def test_scheduler_views_only_the_contact_information_needed_for_scheduling(self):
+        appointment_date = self.next_monday()
+        self.insert_appointment(appointment_date, "08:00", "Approved")
+        with scheduling_app.app.app_context():
+            scheduling_app.db().execute(
+                """
+                INSERT INTO client_requests (
+                    request_code, last_name, first_name, birth_date, gender, barangay,
+                    category, contact_number, contact_key, email, privacy_consent
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
+                """,
+                (
+                    "PRIVACY-TEST", "Queue", "Client", "1993-02-04", "Others",
+                    "Barangay One", "Regular", "09170000000", "09170000000",
+                    "queue-hidden@example.com",
+                ),
+            )
+            scheduling_app.db().commit()
+
+        self.sign_in_as_scheduler()
+        scheduler_page = self.client.get("/admin/appointments")
+        self.assertNotIn(b"1988-04-05", scheduler_page.data)
+        self.assertNotIn(b"1993-02-04", scheduler_page.data)
+        self.assertNotIn(b"scheduler-hidden@example.com", scheduler_page.data)
+        self.assertNotIn(b"queue-hidden@example.com", scheduler_page.data)
+        self.assertIn(b"09171234567", scheduler_page.data)
+
+        self.sign_in_as_admin()
+        admin_page = self.client.get("/admin/appointments")
+        self.assertIn(b"1988-04-05", admin_page.data)
+        self.assertIn(b"scheduler-hidden@example.com", admin_page.data)
+
+    def test_notifications_do_not_send_client_contact_numbers(self):
+        with scheduling_app.app.app_context():
+            scheduling_app.db().execute(
+                """
+                INSERT INTO client_requests (
+                    request_code, last_name, first_name, birth_date, gender, barangay,
+                    category, contact_number, contact_key, privacy_consent
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
+                """,
+                ("NOTICE-TEST", "Notice", "Client", "2001-02-03", "Others", "Barangay One",
+                 "Regular", "09170000000", "09170000000"),
+            )
+            scheduling_app.db().commit()
+        self.sign_in_as_scheduler()
+
+        payload = self.client.get("/admin/notifications").get_json()
+        self.assertNotIn("contact_number", payload["requests"][0])
 
     def test_schema_migrations_are_recorded_and_requests_do_not_run_them(self):
         with scheduling_app.app.app_context():
