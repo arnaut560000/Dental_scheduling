@@ -286,6 +286,23 @@ class SchedulingSystemTests(unittest.TestCase):
         self.assertNotIn(b"2/4", page.data)
         self.assertNotIn(b"Cancelled</span>", page.data)
 
+    def test_administrator_exports_are_recorded_in_the_audit_log(self):
+        self.sign_in_as_admin()
+        self.assertEqual(self.client.get("/admin/analytics/export.csv").status_code, 200)
+        self.assertEqual(self.client.get("/admin/analytics/export.pdf").status_code, 200)
+        self.assertEqual(self.client.get("/admin/export?date=2030-01-07").status_code, 200)
+
+        with scheduling_app.app.app_context():
+            actions = {
+                row["action"]
+                for row in scheduling_app.db().execute(
+                    "SELECT action FROM audit_events WHERE user_id=?", (self.admin_id,)
+                ).fetchall()
+            }
+        self.assertTrue({
+            "analytics_csv_exported", "analytics_pdf_exported", "daily_schedule_exported"
+        }.issubset(actions))
+
     def test_admin_can_update_schedule_and_block_a_date(self):
         self.sign_in_as_admin()
         page = self.client.get("/admin/settings")

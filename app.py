@@ -1368,6 +1368,8 @@ def dashboard():
 def export_analytics_csv():
     start_date, end_date, trend = analytics_range()
     analytics = build_analytics(start_date, end_date, trend)
+    audit("analytics_csv_exported", details=f"range={start_date}:{end_date}; trend={trend}")
+    db().commit()
     stream = io.StringIO()
     writer = csv.writer(stream)
     writer.writerow(["SmileCare Analytics Report"])
@@ -1406,6 +1408,8 @@ def export_analytics_csv():
 def export_analytics_pdf():
     start_date, end_date, trend = analytics_range()
     report = analytics_pdf_report(build_analytics(start_date, end_date, trend))
+    audit("analytics_pdf_exported", details=f"range={start_date}:{end_date}; trend={trend}")
+    db().commit()
     filename = f"smilecare-analytics-{start_date}-to-{end_date}.pdf"
     return Response(
         report.getvalue(),
@@ -2150,6 +2154,8 @@ def export_day():
         "SELECT * FROM appointments WHERE appointment_date=? ORDER BY appointment_time",
         (selected,),
     ).fetchall()
+    audit("daily_schedule_exported", details=f"date={selected}; rows={len(rows)}")
+    db().commit()
     stream = io.StringIO()
     writer = csv.writer(stream)
     writer.writerow([
