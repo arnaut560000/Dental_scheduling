@@ -1055,7 +1055,15 @@ def add_security_headers(response):
 def valid_clinic_date(value):
     try:
         selected = datetime.strptime(value, "%Y-%m-%d").date()
-        return selected >= clinic_today() and selected.weekday() in CLINIC_DAYS
+        configuration = clinic_configuration()
+        is_blocked = db().execute(
+            "SELECT 1 FROM blocked_dates WHERE blocked_date=?", (value,)
+        ).fetchone()
+        return (
+            selected >= clinic_today()
+            and selected.weekday() in configuration["days"]
+            and not is_blocked
+        )
     except (TypeError, ValueError):
         return False
 
@@ -1096,11 +1104,12 @@ def available_slots(day):
         (day,),
     ).fetchall()
     booked = {row["appointment_time"] for row in rows}
-    return [slot for slot in SLOT_TIMES if slot not in booked]
+    return [slot for slot in configured_slot_times() if slot not in booked]
 
 
 def day_schedule(day):
     """Return all clinic slots so the public calendar can label free and taken times."""
+    configuration = clinic_configuration()
     rows = db().execute(
         """
         SELECT appointment_time FROM appointments
@@ -1110,13 +1119,13 @@ def day_schedule(day):
     ).fetchall()
     booked = {row["appointment_time"] for row in rows}
     booked_count = len(booked)
-    is_full = booked_count >= MAX_PER_DAY
+    is_full = booked_count >= configuration["daily_limit"]
     return [
         {
             "time": slot,
             "state": "taken" if slot in booked else ("unavailable" if is_full else "available"),
         }
-        for slot in SLOT_TIMES
+        for slot in configured_slot_times(configuration)
     ], booked_count
 
 
@@ -1229,12 +1238,13 @@ def request_appointment():
 def slots():
     selected = request.args.get("date", "")
     if not valid_clinic_date(selected):
-        return {"slots": [], "message": "Choose a future Monday, Wednesday, or Friday."}
+        return {"slots": [], "message": "Choose an available future clinic date."}
     schedule, booked_count = day_schedule(selected)
-    message = f"{booked_count} of {MAX_PER_DAY} client spaces are taken."
-    if booked_count >= MAX_PER_DAY:
-        message = "This day has reached the 15-client limit. Please choose another date."
-    return {"slots": schedule, "count": booked_count, "max": MAX_PER_DAY, "message": message}
+    daily_limit = clinic_configuration()["daily_limit"]
+    message = f"{booked_count} of {daily_limit} client spaces are taken."
+    if booked_count >= daily_limit:
+        message = "This day has reached its client limit. Please choose another date."
+    return {"slots": schedule, "count": booked_count, "max": daily_limit, "message": message}
 
 
 @app.route("/admin/login", methods=["GET", "POST"])
@@ -1575,9 +1585,10 @@ def schedule_request(request_id):
 
     appointment_date = request.form.get("appointment_date", "")
     appointment_time = request.form.get("appointment_time", "")
+    daily_limit = clinic_configuration()["daily_limit"]
 
     if not valid_clinic_date(appointment_date):
-        flash("Choose a future Monday, Wednesday, or Friday.", "error")
+        flash("Choose an available future clinic date.", "error")
     elif appointment_time not in available_slots(appointment_date):
         flash("That time is no longer available. Choose another.", "error")
     else:
@@ -1625,9 +1636,9 @@ def schedule_request(request_id):
                 (appointment_date,),
             ).fetchone()[0]
 
-            if count >= MAX_PER_DAY:
+            if count >= daily_limit:
                 database.rollback()
-                flash("This day has reached its client limit.", "error")
+                flash(f"This day has reached its {daily_limit}-client limit.", "error")
                 return redirect(url_for("appointments"))
 
             appointment_id = insert_and_get_id(database,
@@ -1840,9 +1851,12 @@ def manage_appointment(appointment_id):
         elif action == "no_show":
             new_status, new_reason = "No-show", reason
         elif action == "reschedule":
-            if not valid_clinic_date(appointment_date) or appointment_time not in SLOT_TIMES:
+            if (
+                not valid_clinic_date(appointment_date)
+                or appointment_time not in configured_slot_times()
+            ):
                 database.rollback()
-                flash("Choose an available future Monday, Wednesday, or Friday time.", "error")
+                flash("Choose an available future clinic date and time.", "error")
                 return redirect(url_for("appointments"))
             same_slot = database.execute(
                 """
@@ -1860,7 +1874,7 @@ def manage_appointment(appointment_id):
                 """,
                 (appointment_date, appointment_id),
             ).fetchone()[0]
-            if same_slot or daily_count >= MAX_PER_DAY:
+            if same_slot or daily_count >= clinic_configuration()["daily_limit"]:
                 database.rollback()
                 flash("That new schedule is no longer available.", "error")
                 return redirect(url_for("appointments"))

@@ -38,8 +38,15 @@ class SchedulingSystemTests(unittest.TestCase):
                 "client_requests",
                 "appointments",
                 "users",
+                "blocked_dates",
             ):
                 database.execute(f"DELETE FROM {table}")
+            database.execute("DELETE FROM clinic_settings")
+            for key, value in scheduling_app.DEFAULT_CLINIC_SETTINGS.items():
+                database.execute(
+                    "INSERT INTO clinic_settings (setting_key, setting_value) VALUES (?, ?)",
+                    (key, value),
+                )
             self.staff_id = database.execute(
                 """
                 INSERT INTO users (username, display_name, password_hash, role)
@@ -174,6 +181,29 @@ class SchedulingSystemTests(unittest.TestCase):
         self.assertEqual(configuration["daily_limit"], 15)
         self.assertEqual(slots[0], "08:00")
         self.assertEqual(slots[-1], "11:45")
+
+    def test_slot_availability_uses_saved_clinic_settings(self):
+        with scheduling_app.app.app_context():
+            database = scheduling_app.db()
+            for key, value in {
+                "clinic_days": "1",
+                "opening_time": "09:00",
+                "closing_time": "10:00",
+                "slot_minutes": "30",
+                "daily_limit": "3",
+            }.items():
+                database.execute(
+                    "UPDATE clinic_settings SET setting_value=? WHERE setting_key=?",
+                    (value, key),
+                )
+            database.commit()
+        next_tuesday = self.next_monday() + timedelta(days=1)
+        self.sign_in_as_scheduler()
+
+        response = self.client.get(f"/slots?date={next_tuesday.isoformat()}")
+        payload = response.get_json()
+        self.assertEqual(payload["max"], 3)
+        self.assertEqual([slot["time"] for slot in payload["slots"]], ["09:00", "09:30"])
 
     def test_legacy_sqlite_slot_constraint_is_migrated_without_losing_history(self):
         database = sqlite3.connect(":memory:")
