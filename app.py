@@ -7,6 +7,7 @@ import secrets
 import sqlite3
 from datetime import date, datetime, timedelta
 from functools import wraps
+from zoneinfo import ZoneInfo
 
 from flask import (
     Flask,
@@ -73,6 +74,16 @@ SLOT_TIMES = [
     for hour in range(8, 12)
     for minute in range(0, 60, SLOT_MINUTES)
 ]
+CLINIC_TIMEZONE = ZoneInfo("Asia/Manila")
+
+
+def clinic_now():
+    """Return the current clinic time instead of the host server's local time."""
+    return datetime.now(CLINIC_TIMEZONE)
+
+
+def clinic_today():
+    return clinic_now().date()
 
 
 class CompatibleRow(dict):
@@ -607,7 +618,7 @@ def record_appointment_history(
 
 def analytics_range():
     """Return a safe, inclusive analytics date range and selected trend grouping."""
-    default_end = date.today()
+    default_end = clinic_today()
     default_start = default_end - timedelta(days=29)
     start_value = request.args.get("start_date", default_start.isoformat())
     end_value = request.args.get("end_date", default_end.isoformat())
@@ -897,7 +908,7 @@ def generate_request_code():
 
     for _ in range(10):
         suffix = "".join(secrets.choice(alphabet) for _ in range(6))
-        request_code = f"REQ-{date.today():%Y%m%d}-{suffix}"
+        request_code = f"REQ-{clinic_today():%Y%m%d}-{suffix}"
 
         existing = db().execute(
             "SELECT 1 FROM client_requests WHERE request_code=?",
@@ -946,7 +957,7 @@ def add_security_headers(response):
 def valid_clinic_date(value):
     try:
         selected = datetime.strptime(value, "%Y-%m-%d").date()
-        return selected >= date.today() and selected.weekday() in CLINIC_DAYS
+        return selected >= clinic_today() and selected.weekday() in CLINIC_DAYS
     except (TypeError, ValueError):
         return False
 
@@ -954,7 +965,8 @@ def valid_clinic_date(value):
 def valid_birth_date(value):
     try:
         birth_date = datetime.strptime(value, "%Y-%m-%d").date()
-        return date.today() >= birth_date >= date.today() - timedelta(days=130 * 366)
+        today = clinic_today()
+        return today >= birth_date >= today - timedelta(days=130 * 366)
     except (TypeError, ValueError):
         return False
 
@@ -1020,6 +1032,8 @@ def time12(value):
 
 
 @app.route("/", methods=["GET", "POST"])
+@limiter.limit("20 per day", methods=["POST"])
+@limiter.limit("5 per hour", methods=["POST"])
 def request_appointment():
     if request.method == "POST":
         fields = {
@@ -1037,7 +1051,7 @@ def request_appointment():
         fields["category"] = category_values[0] if len(category_values) == 1 else ""
         fields["contact_key"] = normalize_contact(fields["contact_number"])
         fields["privacy_consent"] = request.form.get("privacy_consent") == "on"
-        cooldown_cutoff = (datetime.now() - timedelta(days=REQUEST_COOLDOWN_DAYS)).strftime(
+        cooldown_cutoff = (clinic_now() - timedelta(days=REQUEST_COOLDOWN_DAYS)).strftime(
             "%Y-%m-%d %H:%M:%S"
         )
         recent_request = db().execute(
@@ -1161,7 +1175,7 @@ def logout():
 @app.get("/admin")
 @roles_required("admin", "scheduler")
 def dashboard():
-    today = date.today().isoformat()
+    today = clinic_today().isoformat()
     database = db()
     start_date, end_date, trend = analytics_range()
 
@@ -1667,7 +1681,7 @@ def appointments():
         start_date=start_date,
         end_date=end_date,
         rejected_requests=rejected_requests,
-        today=date.today().isoformat(),
+        today=clinic_today().isoformat(),
     )
 
 
@@ -1913,7 +1927,7 @@ def change_password():
 @app.get("/admin/export")
 @roles_required("admin")
 def export_day():
-    selected = request.args.get("date", date.today().isoformat())
+    selected = request.args.get("date", clinic_today().isoformat())
     rows = db().execute(
         "SELECT * FROM appointments WHERE appointment_date=? ORDER BY appointment_time",
         (selected,),

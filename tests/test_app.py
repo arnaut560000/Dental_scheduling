@@ -152,6 +152,9 @@ class SchedulingSystemTests(unittest.TestCase):
         row_maker = scheduling_app.postgres_row_factory(cursor)
         self.assertEqual(row_maker(("unused",)), ("unused",))
 
+    def test_clinic_clock_uses_manila_time(self):
+        self.assertEqual(scheduling_app.clinic_now().tzinfo.key, "Asia/Manila")
+
     def test_legacy_sqlite_slot_constraint_is_migrated_without_losing_history(self):
         database = sqlite3.connect(":memory:")
         database.row_factory = sqlite3.Row
