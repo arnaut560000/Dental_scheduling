@@ -238,6 +238,12 @@ class SchedulingSystemTests(unittest.TestCase):
     def test_clinic_clock_uses_manila_time(self):
         self.assertEqual(scheduling_app.clinic_now().tzinfo.key, "Asia/Manila")
 
+    def test_new_passwords_require_length_case_and_number(self):
+        self.assertTrue(scheduling_app.valid_password("SecurePassword9"))
+        self.assertFalse(scheduling_app.valid_password("alllowercase9"))
+        self.assertFalse(scheduling_app.valid_password("ALLUPPERCASE9"))
+        self.assertFalse(scheduling_app.valid_password("NoDigitsHere"))
+
     def test_default_clinic_configuration_generates_existing_schedule(self):
         with scheduling_app.app.app_context():
             configuration = scheduling_app.clinic_configuration()

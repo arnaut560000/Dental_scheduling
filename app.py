@@ -681,10 +681,23 @@ def roles_required(*allowed_roles):
 
 
 PASSWORD_MIN_LENGTH = 12
+PASSWORD_REQUIREMENT = (
+    "Password must be at least 12 characters and include an uppercase letter, "
+    "lowercase letter, and number."
+)
 
 
 def valid_username(value):
     return bool(re.fullmatch(r"[A-Za-z0-9_.-]{3,40}", value))
+
+
+def valid_password(value):
+    return (
+        len(value) >= PASSWORD_MIN_LENGTH
+        and any(character.islower() for character in value)
+        and any(character.isupper() for character in value)
+        and any(character.isdigit() for character in value)
+    )
 
 
 def audit(action, appointment_id=None, target_user_id=None, details=None):
@@ -1533,11 +1546,8 @@ def accounts():
             )
         elif not 2 <= len(display_name) <= 80:
             flash("Display name must contain 2–80 characters.", "error")
-        elif len(password) < PASSWORD_MIN_LENGTH:
-            flash(
-                f"Password must contain at least {PASSWORD_MIN_LENGTH} characters.",
-                "error",
-            )
+        elif not valid_password(password):
+            flash(PASSWORD_REQUIREMENT, "error")
         elif role not in {"admin", "scheduler"}:
             flash("Invalid account role.", "error")
         else:
@@ -1643,11 +1653,8 @@ def reset_staff_password(user_id):
         flash("Use Change password to update your own password.", "error")
         return redirect(url_for("accounts"))
 
-    if len(new_password) < PASSWORD_MIN_LENGTH:
-        flash(
-            f"New password must contain at least {PASSWORD_MIN_LENGTH} characters.",
-            "error",
-        )
+    if not valid_password(new_password):
+        flash(PASSWORD_REQUIREMENT, "error")
         return redirect(url_for("accounts"))
 
     target = db().execute(
@@ -2142,11 +2149,8 @@ def change_password():
 
         if not check_password_hash(user["password_hash"], current_password):
             flash("Your current password is incorrect.", "error")
-        elif len(new_password) < PASSWORD_MIN_LENGTH:
-            flash(
-                f"New password must contain at least {PASSWORD_MIN_LENGTH} characters.",
-                "error",
-            )
+        elif not valid_password(new_password):
+            flash(PASSWORD_REQUIREMENT, "error")
         elif new_password != confirm_password:
             flash("The new passwords do not match.", "error")
         else:

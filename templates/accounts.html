@@ -20,6 +20,7 @@
         <input name="display_name" minlength="2" maxlength="80" required>
       </label>
       <label>Password<input type="password" name="password" minlength="12" required></label>
+      <p class="notice">Use 12+ characters with uppercase, lowercase, and a number.</p>
       <label>
         Role
         <select name="role">
@@ -60,6 +61,7 @@
                       autocomplete="new-password"
                     >
                     <button class="small" type="submit">Reset password</button>
+                    <p class="notice">12+ characters, uppercase, lowercase, and number.</p>
                   </form>
                 {% else %}
                   Current account
