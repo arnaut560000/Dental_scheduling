@@ -20,6 +20,7 @@
           {% if session.role == 'admin' %}
             <a href="{{ url_for('accounts') }}">Accounts</a>
             <a href="{{ url_for('clinic_settings_page') }}">Settings</a>
+            <a href="{{ url_for('audit_log') }}">Audit log</a>
           {% endif %}
           <a href="{{ url_for('change_password') }}">Change password</a>
           <button type="button" id="notify-bell" class="notify-bell" title="New client requests" hidden>

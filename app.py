@@ -1500,6 +1500,23 @@ def clinic_settings_page():
     )
 
 
+@app.get("/admin/audit-log")
+@roles_required("admin")
+def audit_log():
+    events = db().execute(
+        """
+        SELECT audit_events.*, actor.display_name AS actor_name, actor.username AS actor_username,
+               target.display_name AS target_name, target.username AS target_username
+        FROM audit_events
+        LEFT JOIN users AS actor ON actor.id = audit_events.user_id
+        LEFT JOIN users AS target ON target.id = audit_events.target_user_id
+        ORDER BY audit_events.id DESC
+        LIMIT 250
+        """
+    ).fetchall()
+    return render_template("audit_log.html", events=events)
+
+
 @app.route("/admin/accounts", methods=["GET", "POST"])
 @roles_required("admin")
 def accounts():

@@ -303,6 +303,23 @@ class SchedulingSystemTests(unittest.TestCase):
             "analytics_csv_exported", "analytics_pdf_exported", "daily_schedule_exported"
         }.issubset(actions))
 
+    def test_audit_log_is_visible_only_to_administrators(self):
+        with scheduling_app.app.app_context():
+            scheduling_app.db().execute(
+                "INSERT INTO audit_events (user_id, action, details) VALUES (?, ?, ?)",
+                (self.admin_id, "client_scheduled", "date=2030-01-07"),
+            )
+            scheduling_app.db().commit()
+
+        self.sign_in_as_scheduler()
+        self.assertEqual(self.client.get("/admin/audit-log").status_code, 302)
+
+        self.sign_in_as_admin()
+        page = self.client.get("/admin/audit-log")
+        self.assertEqual(page.status_code, 200)
+        self.assertIn(b"Client Scheduled", page.data)
+        self.assertIn(b"Test Administrator", page.data)
+
     def test_admin_can_update_schedule_and_block_a_date(self):
         self.sign_in_as_admin()
         page = self.client.get("/admin/settings")

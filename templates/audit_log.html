@@ -1,0 +1,34 @@
+{% extends 'base.html' %}
+
+{% block title %}Audit log · SmileCare{% endblock %}
+
+{% block content %}
+  <div class="page-title">
+    <div>
+      <p class="eyebrow">ADMINISTRATOR ONLY</p>
+      <h1>Audit log</h1>
+      <p class="notice">The 250 most recent staff, account, configuration, and export events are shown.</p>
+    </div>
+  </div>
+
+  <section class="card table-card">
+    {% if events %}
+      <table class="wide">
+        <thead><tr><th>When</th><th>Action</th><th>Performed by</th><th>Target</th><th>Details</th></tr></thead>
+        <tbody>
+          {% for event in events %}
+            <tr>
+              <td>{{ event.created_at }}</td>
+              <td>{{ event.action|replace('_', ' ')|title }}</td>
+              <td>{{ event.actor_name or event.actor_username or 'System' }}</td>
+              <td>{{ event.target_name or event.target_username or '—' }}</td>
+              <td>{{ event.details or '—' }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <p class="empty">No audit events have been recorded yet.</p>
+    {% endif %}
+  </section>
+{% endblock %}
