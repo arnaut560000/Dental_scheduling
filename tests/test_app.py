@@ -166,6 +166,15 @@ class SchedulingSystemTests(unittest.TestCase):
     def test_clinic_clock_uses_manila_time(self):
         self.assertEqual(scheduling_app.clinic_now().tzinfo.key, "Asia/Manila")
 
+    def test_default_clinic_configuration_generates_existing_schedule(self):
+        with scheduling_app.app.app_context():
+            configuration = scheduling_app.clinic_configuration()
+            slots = scheduling_app.configured_slot_times(configuration)
+        self.assertEqual(configuration["days"], {0, 2, 4})
+        self.assertEqual(configuration["daily_limit"], 15)
+        self.assertEqual(slots[0], "08:00")
+        self.assertEqual(slots[-1], "11:45")
+
     def test_legacy_sqlite_slot_constraint_is_migrated_without_losing_history(self):
         database = sqlite3.connect(":memory:")
         database.row_factory = sqlite3.Row

@@ -532,6 +532,59 @@ def migrate_clinic_configuration(database):
         )
 
 
+def clinic_configuration():
+    """Return validated scheduling settings, cached for the current request."""
+    if "clinic_configuration" in g:
+        return g.clinic_configuration
+
+    values = DEFAULT_CLINIC_SETTINGS.copy()
+    rows = db().execute(
+        "SELECT setting_key, setting_value FROM clinic_settings"
+    ).fetchall()
+    values.update({row["setting_key"]: row["setting_value"] for row in rows})
+    try:
+        clinic_days = {
+            int(day)
+            for day in values["clinic_days"].split(",")
+            if day.strip().isdigit() and 0 <= int(day) <= 6
+        }
+        opening_time = datetime.strptime(values["opening_time"], "%H:%M")
+        closing_time = datetime.strptime(values["closing_time"], "%H:%M")
+        slot_minutes = int(values["slot_minutes"])
+        daily_limit = int(values["daily_limit"])
+        if not clinic_days or opening_time >= closing_time:
+            raise ValueError
+        if not 5 <= slot_minutes <= 120 or not 1 <= daily_limit <= 200:
+            raise ValueError
+    except (KeyError, TypeError, ValueError):
+        values = DEFAULT_CLINIC_SETTINGS.copy()
+        clinic_days = {0, 2, 4}
+        opening_time = datetime.strptime(values["opening_time"], "%H:%M")
+        closing_time = datetime.strptime(values["closing_time"], "%H:%M")
+        slot_minutes = int(values["slot_minutes"])
+        daily_limit = int(values["daily_limit"])
+
+    g.clinic_configuration = {
+        "days": clinic_days,
+        "opening_time": opening_time.strftime("%H:%M"),
+        "closing_time": closing_time.strftime("%H:%M"),
+        "slot_minutes": slot_minutes,
+        "daily_limit": daily_limit,
+    }
+    return g.clinic_configuration
+
+
+def configured_slot_times(configuration=None):
+    configuration = configuration or clinic_configuration()
+    start = datetime.strptime(configuration["opening_time"], "%H:%M")
+    end = datetime.strptime(configuration["closing_time"], "%H:%M")
+    slots = []
+    while start < end:
+        slots.append(start.strftime("%H:%M"))
+        start += timedelta(minutes=configuration["slot_minutes"])
+    return slots
+
+
 def init_db():
     """Apply each database migration once during application startup."""
     database = db()
