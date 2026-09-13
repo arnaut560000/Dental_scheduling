@@ -50,6 +50,14 @@ Do not deploy the SQLite file for public use. Use a hosted PostgreSQL database a
 
 The database should have automatic backups and a tested restore procedure before collecting real client information.
 
+## Production operations before city-wide use
+
+- **Backups:** schedule encrypted PostgreSQL backups outside the application, retain more than one restore point, and perform a test restore into a separate database at least once. Never test a restore over the live database.
+- **Monitoring:** configure an external uptime monitor to request `https://your-domain/health` every few minutes and alert the administrator when it returns a non-200 response. Check Render application logs after every deployment.
+- **Rate limiting:** the default `memory://` rate-limit storage is suitable only for one small app process. Before running more than one web process, set `RATELIMIT_STORAGE_URI` to a hosted Redis connection string so limits apply consistently.
+- **Bootstrap credentials:** `ADMIN_USERNAME` and `ADMIN_PASSWORD` are used only when a database has no users. After confirming the first administrator can sign in, rotate the password and keep the bootstrap values only in the host's encrypted secret settings—never in code, GitHub, screenshots, or chat.
+- **Privacy operations:** define who may access exports, review the audit log after each export, and adopt a written retention schedule before collecting real client data. Do not delete records until the clinic has approved that policy.
+
 ## Database migrations and tests
 
 Database changes run once when the application process starts and are recorded in the `schema_migrations` table. They do not run while a client or staff member loads a normal page. Back up the production database before deploying a release that contains a new migration.
