@@ -138,6 +138,17 @@ class SchedulingSystemTests(unittest.TestCase):
             }
         self.assertIn(scheduling_app.INITIAL_SCHEMA_MIGRATION, versions)
         self.assertIn(scheduling_app.ACTIVE_SLOT_MIGRATION, versions)
+        self.assertIn(scheduling_app.CLINIC_CONFIGURATION_MIGRATION, versions)
+
+        with scheduling_app.app.app_context():
+            settings = {
+                row["setting_key"]: row["setting_value"]
+                for row in scheduling_app.db().execute(
+                    "SELECT setting_key, setting_value FROM clinic_settings"
+                ).fetchall()
+            }
+        self.assertEqual(settings["opening_time"], "08:00")
+        self.assertEqual(settings["daily_limit"], "15")
 
         original_initializer = scheduling_app.init_db
         scheduling_app.init_db = lambda: self.fail("A request should not run migrations.")

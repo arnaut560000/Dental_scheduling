@@ -398,6 +398,15 @@ def apply_initial_schema(database):
 
 INITIAL_SCHEMA_MIGRATION = "001_initial_schema"
 ACTIVE_SLOT_MIGRATION = "002_active_appointment_slots"
+CLINIC_CONFIGURATION_MIGRATION = "003_clinic_configuration"
+
+DEFAULT_CLINIC_SETTINGS = {
+    "clinic_days": "0,2,4",
+    "opening_time": "08:00",
+    "closing_time": "12:00",
+    "slot_minutes": "15",
+    "daily_limit": "15",
+}
 
 
 def applied_migrations(database):
@@ -491,6 +500,38 @@ def migrate_active_appointment_slots(database):
     )
 
 
+def migrate_clinic_configuration(database):
+    """Create durable, administrator-controlled clinic scheduling settings."""
+    database.execute(
+        """
+        CREATE TABLE IF NOT EXISTS clinic_settings (
+            setting_key TEXT PRIMARY KEY,
+            setting_value TEXT NOT NULL,
+            updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
+    database.execute(
+        """
+        CREATE TABLE IF NOT EXISTS blocked_dates (
+            blocked_date TEXT PRIMARY KEY,
+            reason TEXT NOT NULL,
+            created_by BIGINT,
+            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
+    for key, value in DEFAULT_CLINIC_SETTINGS.items():
+        database.execute(
+            """
+            INSERT INTO clinic_settings (setting_key, setting_value)
+            VALUES (?, ?)
+            ON CONFLICT(setting_key) DO NOTHING
+            """,
+            (key, value),
+        )
+
+
 def init_db():
     """Apply each database migration once during application startup."""
     database = db()
@@ -517,6 +558,10 @@ def init_db():
         if ACTIVE_SLOT_MIGRATION not in completed:
             migrate_active_appointment_slots(database)
             record_migration(database, ACTIVE_SLOT_MIGRATION)
+            completed.add(ACTIVE_SLOT_MIGRATION)
+        if CLINIC_CONFIGURATION_MIGRATION not in completed:
+            migrate_clinic_configuration(database)
+            record_migration(database, CLINIC_CONFIGURATION_MIGRATION)
     finally:
         if locked:
             database.execute("SELECT pg_advisory_unlock(83742619)")
