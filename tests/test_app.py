@@ -221,6 +221,8 @@ class SchedulingSystemTests(unittest.TestCase):
 
     def test_admin_can_update_schedule_and_block_a_date(self):
         self.sign_in_as_admin()
+        page = self.client.get("/admin/settings")
+        self.assertIn(b"Clinic settings", page.data)
         response = self.client.post(
             "/admin/settings",
             data={

@@ -589,6 +589,22 @@ def configured_slot_times(configuration=None):
     return slots
 
 
+def clinic_days_label(days):
+    names = {number: name for number, name in WEEKDAY_OPTIONS}
+    return ", ".join(names[day] for day in sorted(days))
+
+
+@app.context_processor
+def inject_clinic_schedule_summary():
+    configuration = clinic_configuration()
+    return {
+        "clinic_schedule_summary": (
+            f"{clinic_days_label(configuration['days'])} · "
+            f"{configuration['daily_limit']} clients per day"
+        )
+    }
+
+
 def init_db():
     """Apply each database migration once during application startup."""
     database = db()

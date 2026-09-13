@@ -19,6 +19,7 @@
           <a href="{{ url_for('appointments') }}">Clients</a>
           {% if session.role == 'admin' %}
             <a href="{{ url_for('accounts') }}">Accounts</a>
+            <a href="{{ url_for('clinic_settings_page') }}">Settings</a>
           {% endif %}
           <a href="{{ url_for('change_password') }}">Change password</a>
           <button type="button" id="notify-bell" class="notify-bell" title="New client requests" hidden>
@@ -38,7 +39,7 @@
       {% endwith %}
       {% block content %}{% endblock %}
     </main>
-    <footer>Free tooth removal scheduling · Monday, Wednesday & Friday · 15 clients per day</footer>
+    <footer>Free tooth removal scheduling · {{ clinic_schedule_summary }}</footer>
 
     {% if session.user_id %}
       <dialog id="notify-modal" aria-labelledby="notify-heading">

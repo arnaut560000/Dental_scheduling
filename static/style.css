@@ -106,6 +106,11 @@ button, .button-link { border: 0; border-radius: 7px; background: var(--green); 
 .analytics-highlights span { display: block; color: #58706d; font-size: 12px; }
 .analytics-highlights strong { display: block; margin-top: 3px; }
 .analytics-detail-grid { grid-template-columns: 1.4fr 1fr 1fr; }
+.settings-grid { grid-template-columns: 1.15fr .85fr; }
+.weekday-options { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.settings-form-grid { margin-top: 18px; }
+.blocked-date-form { display: grid; gap: 14px; margin-top: 16px; }
+.blocked-date-form button { justify-self: start; margin-top: 0; }
 .trend-row { display: grid; grid-template-columns: 92px 1fr auto; gap: 8px; align-items: center; margin: 12px 0; font-size: 12px; }
 .trend-row > div { height: 9px; background: #e5eeeb; border-radius: 5px; overflow: hidden; min-width: 70px; }
 .trend-row i { display: block; height: 100%; background: var(--green); }
@@ -176,6 +181,8 @@ dialog::backdrop { background: #0f292680; }
   .page-title { align-items: start; gap: 16px; flex-direction: column; }
   .filters { align-items: stretch; flex-direction: column; }
   .analytics-highlights { grid-template-columns: 1fr; }
+  .weekday-options { grid-template-columns: 1fr; }
+  .blocked-date-form button { width: 100%; }
   nav { gap: 12px; }
   .card { padding: 20px; }
   .week-navigation strong { font-size: 12px; text-align: center; }
