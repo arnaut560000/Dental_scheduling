@@ -407,6 +407,10 @@ DEFAULT_CLINIC_SETTINGS = {
     "slot_minutes": "15",
     "daily_limit": "15",
 }
+WEEKDAY_OPTIONS = [
+    (0, "Monday"), (1, "Tuesday"), (2, "Wednesday"), (3, "Thursday"),
+    (4, "Friday"), (5, "Saturday"), (6, "Sunday"),
+]
 
 
 def applied_migrations(database):
@@ -1388,6 +1392,89 @@ def export_analytics_pdf():
         mimetype="application/pdf",
         headers={"Content-Disposition": f"attachment; filename={filename}"},
     )
+
+
+@app.route("/admin/settings", methods=["GET", "POST"])
+@roles_required("admin")
+def clinic_settings_page():
+    if request.method == "POST":
+        action = request.form.get("action", "")
+        database = db()
+        if action == "save-schedule":
+            try:
+                clinic_days = sorted({int(day) for day in request.form.getlist("clinic_days")})
+                opening_time = request.form.get("opening_time", "")
+                closing_time = request.form.get("closing_time", "")
+                slot_minutes = int(request.form.get("slot_minutes", ""))
+                daily_limit = int(request.form.get("daily_limit", ""))
+                opening = datetime.strptime(opening_time, "%H:%M")
+                closing = datetime.strptime(closing_time, "%H:%M")
+                if not clinic_days or any(day not in range(7) for day in clinic_days):
+                    raise ValueError
+                if opening >= closing or not 5 <= slot_minutes <= 120 or not 1 <= daily_limit <= 200:
+                    raise ValueError
+            except (TypeError, ValueError):
+                flash("Enter valid clinic days, times, slot duration, and daily limit.", "error")
+            else:
+                updates = {
+                    "clinic_days": ",".join(map(str, clinic_days)),
+                    "opening_time": opening_time,
+                    "closing_time": closing_time,
+                    "slot_minutes": str(slot_minutes),
+                    "daily_limit": str(daily_limit),
+                }
+                for key, value in updates.items():
+                    database.execute(
+                        "UPDATE clinic_settings SET setting_value=?, updated_at=CURRENT_TIMESTAMP WHERE setting_key=?",
+                        (value, key),
+                    )
+                database.commit()
+                g.pop("clinic_configuration", None)
+                audit("clinic_schedule_updated", details=str(updates))
+                database.commit()
+                flash("Clinic schedule updated.", "success")
+        elif action == "block-date":
+            blocked_date = request.form.get("blocked_date", "")
+            reason = request.form.get("reason", "").strip()
+            try:
+                selected = datetime.strptime(blocked_date, "%Y-%m-%d").date()
+                if selected < clinic_today() or not 2 <= len(reason) <= 300:
+                    raise ValueError
+            except (TypeError, ValueError):
+                flash("Choose a future date and a reason between 2 and 300 characters.", "error")
+            else:
+                database.execute(
+                    """
+                    INSERT INTO blocked_dates (blocked_date, reason, created_by)
+                    VALUES (?, ?, ?)
+                    ON CONFLICT(blocked_date) DO UPDATE SET reason=excluded.reason, created_by=excluded.created_by
+                    """,
+                    (blocked_date, reason, session["user_id"]),
+                )
+                audit("clinic_date_blocked", details=f"date={blocked_date}; reason={reason}")
+                database.commit()
+                flash("Date blocked.", "success")
+        elif action == "unblock-date":
+            blocked_date = request.form.get("blocked_date", "")
+            if database.execute("DELETE FROM blocked_dates WHERE blocked_date=?", (blocked_date,)).rowcount:
+                audit("clinic_date_unblocked", details=f"date={blocked_date}")
+                database.commit()
+                flash("Date unblocked.", "success")
+        else:
+            flash("Choose a valid settings action.", "error")
+        return redirect(url_for("clinic_settings_page"))
+
+    blocked_dates = db().execute(
+        "SELECT blocked_date, reason FROM blocked_dates ORDER BY blocked_date"
+    ).fetchall()
+    return render_template(
+        "settings.html",
+        configuration=clinic_configuration(),
+        weekday_options=WEEKDAY_OPTIONS,
+        blocked_dates=blocked_dates,
+        today=clinic_today().isoformat(),
+    )
+
 
 @app.route("/admin/accounts", methods=["GET", "POST"])
 @roles_required("admin")

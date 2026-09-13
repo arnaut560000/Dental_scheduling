@@ -54,6 +54,13 @@ class SchedulingSystemTests(unittest.TestCase):
                 """,
                 ("scheduler", "Test Scheduler", generate_password_hash("password-12345")),
             ).lastrowid
+            self.admin_id = database.execute(
+                """
+                INSERT INTO users (username, display_name, password_hash, role)
+                VALUES (?, ?, ?, 'admin')
+                """,
+                ("admin", "Test Administrator", generate_password_hash("password-12345")),
+            ).lastrowid
             database.commit()
 
     def sign_in_as_scheduler(self):
@@ -62,6 +69,13 @@ class SchedulingSystemTests(unittest.TestCase):
             session["username"] = "scheduler"
             session["display_name"] = "Test Scheduler"
             session["role"] = "scheduler"
+
+    def sign_in_as_admin(self):
+        with self.client.session_transaction() as session:
+            session["user_id"] = self.admin_id
+            session["username"] = "admin"
+            session["display_name"] = "Test Administrator"
+            session["role"] = "admin"
 
     @staticmethod
     def next_monday():
@@ -204,6 +218,30 @@ class SchedulingSystemTests(unittest.TestCase):
         payload = response.get_json()
         self.assertEqual(payload["max"], 3)
         self.assertEqual([slot["time"] for slot in payload["slots"]], ["09:00", "09:30"])
+
+    def test_admin_can_update_schedule_and_block_a_date(self):
+        self.sign_in_as_admin()
+        response = self.client.post(
+            "/admin/settings",
+            data={
+                "action": "save-schedule",
+                "clinic_days": ["0", "2", "4"],
+                "opening_time": "09:00",
+                "closing_time": "11:00",
+                "slot_minutes": "30",
+                "daily_limit": "4",
+            },
+        )
+        self.assertEqual(response.status_code, 302)
+
+        blocked_date = self.next_monday().isoformat()
+        response = self.client.post(
+            "/admin/settings",
+            data={"action": "block-date", "blocked_date": blocked_date, "reason": "Clinic holiday"},
+        )
+        self.assertEqual(response.status_code, 302)
+        response = self.client.get(f"/slots?date={blocked_date}")
+        self.assertEqual(response.get_json()["slots"], [])
 
     def test_legacy_sqlite_slot_constraint_is_migrated_without_losing_history(self):
         database = sqlite3.connect(":memory:")
