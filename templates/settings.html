@@ -1,0 +1,78 @@
+{% extends 'base.html' %}
+
+{% block title %}Clinic settings · {{ config.CLINIC_NAME }}{% endblock %}
+
+{% block content %}
+  <div class="page-title">
+    <div>
+      <p class="eyebrow">ADMINISTRATION</p>
+      <h1>Clinic settings</h1>
+      <p>Control clinic availability without editing source code.</p>
+    </div>
+  </div>
+
+  <div class="dashboard-grid settings-grid">
+    <form class="card" method="post">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="action" value="save-schedule">
+      <h2>Regular clinic schedule</h2>
+      <p class="notice">Only administrators can change these settings.</p>
+
+      <fieldset class="choice-group">
+        <legend>Clinic days*</legend>
+        <div class="option-list weekday-options">
+          {% for number, name in weekday_options %}
+            <label class="choice-option">
+              <input type="checkbox" name="clinic_days" value="{{ number }}" {% if number in configuration.days %}checked{% endif %}>
+              <span>{{ name }}</span>
+            </label>
+          {% endfor %}
+        </div>
+      </fieldset>
+
+      <div class="form-grid settings-form-grid">
+        <label>Opening time*<input type="time" name="opening_time" required value="{{ configuration.opening_time }}"></label>
+        <label>Closing time*<input type="time" name="closing_time" required value="{{ configuration.closing_time }}"></label>
+        <label>Slot duration (minutes)*<input type="number" name="slot_minutes" min="5" max="120" required value="{{ configuration.slot_minutes }}"></label>
+        <label>Daily client limit*<input type="number" name="daily_limit" min="1" max="200" required value="{{ configuration.daily_limit }}"></label>
+      </div>
+      <button type="submit">Save clinic schedule</button>
+    </form>
+
+    <section class="card">
+      <h2>Blocked dates / holidays</h2>
+      <p class="notice">A blocked date cannot receive new appointments even if it is a regular clinic day.</p>
+      <form method="post" class="blocked-date-form">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="action" value="block-date">
+        <label>Date*<input type="date" name="blocked_date" min="{{ today }}" required></label>
+        <label>Reason*<input name="reason" maxlength="300" placeholder="Holiday, clinic closure, or event" required></label>
+        <button type="submit">Block date</button>
+      </form>
+
+      {% if blocked_dates %}
+        <table>
+          <thead><tr><th>Date</th><th>Reason</th><th></th></tr></thead>
+          <tbody>
+            {% for blocked in blocked_dates %}
+              <tr>
+                <td>{{ blocked.blocked_date }}</td>
+                <td>{{ blocked.reason }}</td>
+                <td>
+                  <form method="post">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <input type="hidden" name="action" value="unblock-date">
+                    <input type="hidden" name="blocked_date" value="{{ blocked.blocked_date }}">
+                    <button class="small secondary-button" type="submit">Unblock</button>
+                  </form>
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      {% else %}
+        <p class="empty">No dates are blocked.</p>
+      {% endif %}
+    </section>
+  </div>
+{% endblock %}
