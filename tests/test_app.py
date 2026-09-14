@@ -183,6 +183,16 @@ class SchedulingSystemTests(unittest.TestCase):
         self.assertIn(b"/static/edental-link-preview.png", response.data)
         self.assertIn(b'name="twitter:card" content="summary_large_image"', response.data)
 
+    def test_public_client_page_shows_only_the_staff_sign_in_link(self):
+        self.sign_in_as_admin()
+        response = self.client.get("/")
+
+        self.assertIn(b"Staff sign in", response.data)
+        self.assertNotIn(b">Dashboard</a>", response.data)
+        self.assertNotIn(b">Clients</a>", response.data)
+        self.assertNotIn(b">Accounts</a>", response.data)
+        self.assertNotIn(b"notify-modal", response.data)
+
     def test_cancelled_slot_becomes_available_and_can_be_reused(self):
         appointment_date = self.next_monday()
         self.insert_appointment(appointment_date, "08:00", "Cancelled")
