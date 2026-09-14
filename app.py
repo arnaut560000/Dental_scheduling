@@ -70,7 +70,7 @@ MAX_PUBLIC_REQUESTS_PER_DAY = 50
 REQUEST_COOLDOWN_DAYS = 30
 PRIVACY_NOTICE_VERSION = "2026-09-13"
 CLINIC_DAYS = {0, 2, 4}  # Monday, Wednesday, Friday
-VALID_CATEGORIES = {"Regular", "PWD", "Senior Citizen"}
+VALID_CATEGORIES = {"Regular", "PWD", "Senior Citizen", "Pregnant Woman"}
 VALID_GENDERS = {"Female", "Male", "Others"}
 BARANGAYS = [
     "Andal Alino (Pob.)",
