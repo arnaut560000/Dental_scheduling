@@ -87,15 +87,6 @@
     <label>From<input type="date" name="start_date" value="{{ start_date }}"></label>
     <label>To<input type="date" name="end_date" value="{{ end_date }}"></label>
     <label>
-      Status
-      <select name="status">
-        <option value="">All statuses</option>
-        {% for item in ['Pending', 'Approved', 'Finished', 'Cancelled', 'No-show'] %}
-          <option value="{{ item }}" {% if selected_status == item %}selected{% endif %}>{{ item }}</option>
-        {% endfor %}
-      </select>
-    </label>
-    <label>
       Client sector
       <select name="category">
         <option value="">All sectors</option>
