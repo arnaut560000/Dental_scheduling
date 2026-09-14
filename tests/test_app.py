@@ -183,6 +183,15 @@ class SchedulingSystemTests(unittest.TestCase):
         self.assertIn(b"/static/edental-link-preview.png", response.data)
         self.assertIn(b'name="twitter:card" content="summary_large_image"', response.data)
 
+    def test_header_uses_the_municipal_dental_logo(self):
+        response = self.client.get("/")
+        self.assertIn(b"municipal-dental-logo.png", response.data)
+        logo_response = self.client.get("/static/municipal-dental-logo.png")
+        try:
+            self.assertEqual(logo_response.status_code, 200)
+        finally:
+            logo_response.close()
+
     def test_public_client_page_shows_only_the_staff_sign_in_link(self):
         self.sign_in_as_admin()
         response = self.client.get("/")

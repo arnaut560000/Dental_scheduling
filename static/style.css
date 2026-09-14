@@ -22,19 +22,19 @@ body {
 }
 
 .brand {
+  display: flex;
+  align-items: center;
   color: var(--green);
-  font-size: 22px;
-  font-weight: 800;
-  line-height: 1.1;
   text-decoration: none;
 }
 
-.brand span {
+.brand img {
   display: block;
-  margin-top: 4px;
-  color: #607673;
-  font-size: 12px;
-  font-weight: 500;
+  width: auto;
+  max-width: 100%;
+  height: 56px;
+  object-fit: contain;
+  object-position: left center;
 }
 
 /* Public client page: brand left, login button right */
@@ -79,8 +79,15 @@ body {
 }
 
 .staff-layout .brand {
+  justify-content: center;
   padding: 8px 10px 18px;
   border-bottom: 1px solid var(--line);
+}
+
+.staff-layout .brand img {
+  width: 100%;
+  height: auto;
+  max-height: 105px;
 }
 
 .staff-layout .site-header nav {
@@ -344,9 +351,9 @@ dialog::backdrop { background: #0f292680; }
     padding: 16px;
   }
 
-  .staff-layout .brad {
+  .staff-layout .brand {
     padding: 6px 10px;
-    border-button: 0;
+    border-bottom: 0;
   }
 
   .staff-layout .site-header nav {
@@ -378,8 +385,8 @@ dialog::backdrop { background: #0f292680; }
     padding: 14px 16px;
   }
 
-  .brand {
-    font-size: 20px;
+  .brand img {
+    height: 46px;
   }
 
   .staff-layout .site-header nav {

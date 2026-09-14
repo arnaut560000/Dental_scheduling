@@ -22,8 +22,11 @@
  {% set is_public_client_page = request.endpoint in ('request_appointment', 'privacy_notice') %}
 <body class="{% if session.user_id and not is_public_client_page %}staff-layout{% else %}public-layout{% endif %}">
   <header class="site-header">
-      <a class="brand" href="{{ url_for('request_appointment') }}">
-        SmileCare <span>Free Tooth Removal</span>
+      <a class="brand" href="{{ url_for('request_appointment') }}" aria-label="Municipal Dental Service Appointment and Management System">
+        <img
+          src="{{ url_for('static', filename='municipal-dental-logo.png') }}"
+          alt="Municipal Dental Service Appointment and Management System"
+        >
       </a>
       {% if session.user_id and not is_public_client_page %}
         <nav>
