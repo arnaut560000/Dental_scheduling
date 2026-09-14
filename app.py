@@ -2112,7 +2112,7 @@ def appointment_history(appointment_id):
 @app.get("/admin/notifications")
 @login_required
 def notifications():
-    """New client requests this staff member hasn't seen yet, newest last."""
+    """Deliver each new client request once to the signed-in staff member."""
     rows = db().execute(
         """
         SELECT id, last_name, first_name, middle_initial, category,
@@ -2124,6 +2124,19 @@ def notifications():
         """,
         (g.current_user["last_seen_appointment_id"],),
     ).fetchall()
+    if rows:
+        # Mark requests as seen when delivered, rather than waiting for a page
+        # click to dismiss the dialog. This prevents the same pop-up appearing
+        # again after the staff member opens another staff page.
+        db().execute(
+            """
+            UPDATE users
+            SET last_seen_appointment_id = MAX(last_seen_appointment_id, ?)
+            WHERE id=?
+            """,
+            (rows[-1]["id"], g.current_user["id"]),
+        )
+        db().commit()
     return {
         "requests": [
             {

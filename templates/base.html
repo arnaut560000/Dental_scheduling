@@ -68,9 +68,6 @@
           const dismissBtn = document.getElementById('notify-dismiss');
           const closeBtn = document.getElementById('notify-close');
           let pending = [];
-          const csrfToken = document
-            .querySelector('meta[name="csrf-token"]')
-            .getAttribute('content');
 
           function escapeHtml(value) {
             const div = document.createElement('div');
@@ -115,21 +112,8 @@
             }
           }
 
-          async function dismiss() {
+          function dismiss() {
             if (pending.length) {
-              const lastId = Math.max.apply(null, pending.map(function (item) { return item.id; }));
-              try {
-                await fetch('{{ url_for("acknowledge_notifications") }}', {
-                  method: 'POST',
-                  headers: {
-                    'Content-Type': 'application/x-www-form-urlencoded',
-                    'X-CSRFToken': csrfToken,
-                  },
-                  body: 'last_id=' + encodeURIComponent(lastId),
-                });
-              } catch (error) {
-                /* if this fails, the same requests will just show again next poll */
-              }
               pending = [];
               render();
             }

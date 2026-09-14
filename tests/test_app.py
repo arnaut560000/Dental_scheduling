@@ -184,6 +184,7 @@ class SchedulingSystemTests(unittest.TestCase):
         self.assertIn(b"scheduler-hidden@example.com", admin_page.data)
 
     def test_notifications_do_not_send_client_contact_numbers(self):
+        self.assertEqual(self.client.get("/admin/notifications").status_code, 302)
         with scheduling_app.app.app_context():
             scheduling_app.db().execute(
                 """
@@ -200,6 +201,14 @@ class SchedulingSystemTests(unittest.TestCase):
 
         payload = self.client.get("/admin/notifications").get_json()
         self.assertNotIn("contact_number", payload["requests"][0])
+        self.assertEqual(len(payload["requests"]), 1)
+        self.assertEqual(self.client.get("/admin/notifications").get_json()["requests"], [])
+
+        with scheduling_app.app.app_context():
+            last_seen = scheduling_app.db().execute(
+                "SELECT last_seen_appointment_id FROM users WHERE id=?", (self.staff_id,)
+            ).fetchone()["last_seen_appointment_id"]
+        self.assertGreater(last_seen, 0)
 
     def test_schema_migrations_are_recorded_and_requests_do_not_run_them(self):
         with scheduling_app.app.app_context():
