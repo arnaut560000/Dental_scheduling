@@ -19,9 +19,9 @@
     <meta name="twitter:description" content="Free tooth-removal online request form for Talavera Community Dental Clinic.">
     <meta name="twitter:image" content="{{ social_image_url }}">
   </head>
-  <body>
-    {% set is_public_client_page = request.endpoint in ('request_appointment', 'privacy_notice') %}
-    <header>
+ {% set is_public_client_page = request.endpoint in ('request_appointment', 'privacy_notice') %}
+<body class="{% if session.user_id and not is_public_client_page %}staff-layout{% else %}public-layout{% endif %}">
+  <header class="site-header">
       <a class="brand" href="{{ url_for('request_appointment') }}">
         SmileCare <span>Free Tooth Removal</span>
       </a>
