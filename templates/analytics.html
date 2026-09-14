@@ -1,0 +1,61 @@
+{% extends 'base.html' %}
+
+{% block title %}Analytics · SmileCare{% endblock %}
+
+{% block content %}
+  <div class="page-title">
+    <div>
+      <p class="eyebrow">ADMINISTRATOR ONLY</p>
+      <h1>Clinic analytics</h1>
+      <p class="notice">Use reports to understand demand and clinic outcomes. They do not change the client queue.</p>
+    </div>
+    <div class="export-actions">
+      <a class="button-link secondary" href="{{ url_for('export_analytics_csv', start_date=analytics.start_date, end_date=analytics.end_date, trend=analytics.trend) }}">Export CSV</a>
+      <a class="button-link secondary" href="{{ url_for('export_analytics_pdf', start_date=analytics.start_date, end_date=analytics.end_date, trend=analytics.trend) }}">Export PDF</a>
+    </div>
+  </div>
+
+  <section class="card analytics-card">
+    <form class="filters analytics-filters" method="get">
+      <label>From<input type="date" name="start_date" value="{{ analytics.start_date }}"></label>
+      <label>To<input type="date" name="end_date" value="{{ analytics.end_date }}"></label>
+      <label>Trend grouping<select name="trend">{% for item in ['daily', 'weekly', 'monthly'] %}<option value="{{ item }}" {% if analytics.trend == item %}selected{% endif %}>{{ item.title() }}</option>{% endfor %}</select></label>
+      <button>Apply filter</button>
+    </form>
+
+    <div class="stats analytics-stats">
+      <div><span>Requests received</span><b>{{ analytics.requests_received }}</b></div>
+      <div><span>Appointments scheduled</span><b>{{ analytics.appointments_scheduled }}</b></div>
+      <div><span>Clients approved</span><b>{{ analytics.clients_approved }}</b></div>
+      <div><span>Avg. request-to-schedule</span><b>{% if analytics.average_wait_hours is not none %}{{ analytics.average_wait_hours }}h{% else %}—{% endif %}</b></div>
+    </div>
+    <div class="stats analytics-stats">
+      <div><span>Approval rate</span><b>{{ analytics.approval_rate }}%</b></div>
+      <div><span>Completed-service rate</span><b>{{ analytics.completed_service_rate }}%</b></div>
+      <div><span>Cancellation rate</span><b>{{ analytics.cancellation_rate }}%</b></div>
+      <div><span>No-show rate</span><b>{{ analytics.no_show_rate }}%</b></div>
+    </div>
+
+    <div class="analytics-highlights">
+      <div><span>Busiest day</span><strong>{{ analytics.busiest_day }}{% if analytics.busiest_day_count %} · {{ analytics.busiest_day_count }} appointments{% endif %}</strong></div>
+      <div><span>Busiest time</span><strong>{% if analytics.busiest_time %}{{ analytics.busiest_time|time12 }} · {{ analytics.busiest_time_count }} appointments{% else %}No data{% endif %}</strong></div>
+    </div>
+
+    <div class="dashboard-grid analytics-detail-grid">
+      <div>
+        <h2>{{ analytics.trend.title() }} trend</h2>
+        {% for item in analytics.trends %}<div class="trend-row"><span>{{ item.bucket }}</span><div><i style="width: {{ item.width }}%"></i></div><b>{{ item.requests }} requests · {{ item.approved }} approved</b></div>{% else %}<p class="empty">No data for this date range.</p>{% endfor %}
+      </div>
+      <div>
+        <h2>Requests by status</h2>
+        {% for item in analytics.by_status %}<p>{{ item.status }}: <strong>{{ item.count }}</strong></p>{% else %}<p class="empty">No appointment data.</p>{% endfor %}
+        <h2>Requests by sector</h2>
+        {% for item in analytics.by_category %}<p>{{ item.category }}: <strong>{{ item.count }}</strong></p>{% else %}<p class="empty">No request data.</p>{% endfor %}
+      </div>
+      <div>
+        <h2>Top barangays</h2>
+        {% for item in analytics.by_barangay %}<p>{{ item.barangay }}: <strong>{{ item.count }}</strong></p>{% else %}<p class="empty">No request data.</p>{% endfor %}
+      </div>
+    </div>
+  </section>
+{% endblock %}

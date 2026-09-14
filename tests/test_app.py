@@ -328,6 +328,13 @@ class SchedulingSystemTests(unittest.TestCase):
         self.assertIn(b"1/4", page.data)
         self.assertNotIn(b"2/4", page.data)
         self.assertNotIn(b"Cancelled</span>", page.data)
+        self.assertNotIn(b"Clinic analytics", page.data)
+
+        self.assertEqual(self.client.get("/admin/analytics").status_code, 302)
+        self.sign_in_as_admin()
+        analytics_page = self.client.get("/admin/analytics")
+        self.assertEqual(analytics_page.status_code, 200)
+        self.assertIn(b"Clinic analytics", analytics_page.data)
 
     def test_administrator_exports_are_recorded_in_the_audit_log(self):
         self.sign_in_as_admin()

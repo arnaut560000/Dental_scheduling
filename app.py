@@ -1335,7 +1335,6 @@ def logout():
 def dashboard():
     today = clinic_today().isoformat()
     database = db()
-    start_date, end_date, trend = analytics_range()
 
     totals = {
         "all": database.execute("SELECT COUNT(*) FROM client_requests").fetchone()[0],
@@ -1377,16 +1376,23 @@ def dashboard():
         (today,),
     ).fetchall()
 
-    analytics = build_analytics(start_date, end_date, trend)
-
     return render_template(
         "dashboard.html",
         totals=totals,
         upcoming=upcoming,
         daily=daily,
-        analytics=analytics,
         today=today,
         daily_limit=clinic_configuration()["daily_limit"],
+    )
+
+
+@app.get("/admin/analytics")
+@roles_required("admin")
+def analytics_page():
+    start_date, end_date, trend = analytics_range()
+    return render_template(
+        "analytics.html",
+        analytics=build_analytics(start_date, end_date, trend),
     )
 
 
