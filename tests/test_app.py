@@ -117,7 +117,7 @@ class SchedulingSystemTests(unittest.TestCase):
                 "first_name": "Test",
                 "birth_date": "2000-01-01",
                 "gender": "Others",
-                "barangay": "Barangay One",
+                "barangay": scheduling_app.BARANGAYS[0],
                 "category": "Regular",
                 "contact_number": "09171234567",
                 "privacy_consent": "on",
@@ -132,6 +132,49 @@ class SchedulingSystemTests(unittest.TestCase):
             ).fetchone()
         self.assertEqual(row["gender"], "Others")
         self.assertEqual(row["privacy_notice_version"], scheduling_app.PRIVACY_NOTICE_VERSION)
+
+    def test_daily_request_limit_closes_the_public_form_and_blocks_submissions(self):
+        with scheduling_app.app.app_context():
+            database = scheduling_app.db()
+            for number in range(scheduling_app.MAX_PUBLIC_REQUESTS_PER_DAY):
+                contact_number = f"0917{number:07d}"
+                database.execute(
+                    """
+                    INSERT INTO client_requests (
+                        request_code, last_name, first_name, birth_date, gender, barangay,
+                        category, contact_number, contact_key, privacy_consent
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
+                    """,
+                    (
+                        f"LIMIT-{number}", "Limited", "Client", "2000-01-01", "Others",
+                        scheduling_app.BARANGAYS[0], "Regular", contact_number, contact_number,
+                    ),
+                )
+            database.commit()
+
+        page = self.client.get("/")
+        self.assertIn(b"Online registration is full for today.", page.data)
+        self.assertNotIn(b">Submit request</button>", page.data)
+
+        response = self.client.post(
+            "/",
+            data={
+                "last_name": "New",
+                "first_name": "Client",
+                "birth_date": "2000-01-01",
+                "gender": "Others",
+                "barangay": scheduling_app.BARANGAYS[0],
+                "category": "Regular",
+                "contact_number": "09991234567",
+                "privacy_consent": "on",
+            },
+        )
+        self.assertIn(b"Online registration is full for today.", response.data)
+        with scheduling_app.app.app_context():
+            total = scheduling_app.db().execute(
+                "SELECT COUNT(*) FROM client_requests"
+            ).fetchone()[0]
+        self.assertEqual(total, scheduling_app.MAX_PUBLIC_REQUESTS_PER_DAY)
 
     def test_public_page_includes_the_social_link_preview_image(self):
         response = self.client.get("/", base_url="https://clinic.example")

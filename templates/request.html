@@ -16,6 +16,13 @@
     </ol>
   </section>
 
+  {% if request_limit_reached %}
+    <section class="card empty" aria-labelledby="registration-full-title">
+      <p class="eyebrow">DAILY REQUEST LIMIT REACHED</p>
+      <h2 id="registration-full-title">Online registration is full for today.</h2>
+      <p>We have received the maximum of {{ max_daily_requests }} online requests for today. Please submit your request tomorrow.</p>
+    </section>
+  {% else %}
   <form class="card appointment-form" method="post">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 
@@ -71,8 +78,8 @@
             {% for barangay in barangays %}
               <option value="{{ barangay }}" {% if request.form.barangay == barangay %}selected{% endif %}>
                 {{ barangay }}
-            </option>
-          {% endfor %}
+              </option>
+            {% endfor %}
           </select>
         </label>
         <label>
@@ -129,6 +136,7 @@
       </div>
     </div>
   </form>
+  {% endif %}
 {% endblock %}
 
 {% block scripts %}

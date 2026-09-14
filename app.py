@@ -66,6 +66,7 @@ limiter = Limiter(
 logging.basicConfig(level=os.environ.get("LOG_LEVEL", "INFO"))
 MAX_PER_DAY = 15
 SLOT_MINUTES = 15
+MAX_PUBLIC_REQUESTS_PER_DAY = 50
 REQUEST_COOLDOWN_DAYS = 30
 PRIVACY_NOTICE_VERSION = "2026-09-13"
 CLINIC_DAYS = {0, 2, 4}  # Monday, Wednesday, Friday
@@ -1199,6 +1200,21 @@ def normalize_contact(value):
     return "".join(character for character in value if character.isdigit())
 
 
+def public_requests_today(database=None):
+    """Count all client form submissions made during the current Manila day."""
+    database = database or db()
+    today = clinic_today()
+    tomorrow = today + timedelta(days=1)
+    return database.execute(
+        """
+        SELECT COUNT(*)
+        FROM client_requests
+        WHERE created_at >= ? AND created_at < ?
+        """,
+        (today.isoformat(), tomorrow.isoformat()),
+    ).fetchone()[0]
+
+
 def monday_for(value):
     """Return the Monday that starts the week containing an ISO date."""
     selected = datetime.strptime(value, "%Y-%m-%d").date()
@@ -1313,34 +1329,56 @@ def request_appointment():
                 "error",
             )
         else:
-            fields["request_code"] = generate_request_code()
-            request_id = insert_and_get_id(
-                db(),
-                """
-                INSERT INTO client_requests (
-                    request_code, last_name, first_name, middle_initial, birth_date, gender,
-                    barangay, category, contact_number, contact_key, email,
-                    privacy_consent, consent_at, privacy_notice_version
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?)
-                """,
-                (
-                    fields["request_code"], fields["last_name"], fields["first_name"],
-                    fields["middle_initial"], fields["birth_date"], fields["gender"], fields["barangay"],
-                    fields["category"], fields["contact_number"], fields["contact_key"],
-                    fields["email"], int(fields["privacy_consent"]), PRIVACY_NOTICE_VERSION,
-                ),
-            )
-            db().commit()
-            fields["submitted_at"] = db().execute(
-                "SELECT created_at FROM client_requests WHERE id=?",
-                (request_id,),
-            ).fetchone()[0]
-            return render_template("success.html", client_request=fields)
+            database = db()
+            try:
+                # SQLite serializes writes with BEGIN IMMEDIATE. PostgreSQL uses
+                # this transaction-scoped lock so concurrent requests cannot pass
+                # the 50-request check at the same time.
+                begin_write_transaction(database)
+                if using_postgres(database):
+                    database.execute("SELECT pg_advisory_xact_lock(1048750)")
 
+                if public_requests_today(database) >= MAX_PUBLIC_REQUESTS_PER_DAY:
+                    database.rollback()
+                    flash(
+                        "Online registration is full for today. Please submit your request tomorrow.",
+                        "error",
+                    )
+                else:
+                    fields["request_code"] = generate_request_code()
+                    request_id = insert_and_get_id(
+                        database,
+                        """
+                        INSERT INTO client_requests (
+                            request_code, last_name, first_name, middle_initial, birth_date, gender,
+                            barangay, category, contact_number, contact_key, email,
+                            privacy_consent, consent_at, privacy_notice_version
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?)
+                        """,
+                        (
+                            fields["request_code"], fields["last_name"], fields["first_name"],
+                            fields["middle_initial"], fields["birth_date"], fields["gender"], fields["barangay"],
+                            fields["category"], fields["contact_number"], fields["contact_key"],
+                            fields["email"], int(fields["privacy_consent"]), PRIVACY_NOTICE_VERSION,
+                        ),
+                    )
+                    database.commit()
+                    fields["submitted_at"] = database.execute(
+                        "SELECT created_at FROM client_requests WHERE id=?",
+                        (request_id,),
+                    ).fetchone()[0]
+                    return render_template("success.html", client_request=fields)
+            except (sqlite3.IntegrityError, PostgresIntegrityError):
+                database.rollback()
+                flash("We could not save your request. Please try again.", "error")
+
+    daily_request_count = public_requests_today()
     return render_template(
         "request.html",
         cooldown_days=REQUEST_COOLDOWN_DAYS,
         barangays=BARANGAYS,
+        max_daily_requests=MAX_PUBLIC_REQUESTS_PER_DAY,
+        request_limit_reached=daily_request_count >= MAX_PUBLIC_REQUESTS_PER_DAY,
     )
 
 
