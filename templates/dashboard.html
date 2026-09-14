@@ -17,7 +17,7 @@
     <div><span>Total requests</span><b>{{ totals.all }}</b></div>
     <div><span>Waiting for schedule</span><b>{{ totals.pending }}</b></div>
     <div><span>Scheduled today</span><b>{{ totals.today }}</b></div>
-    <div><span>Clients served</span><b>{{ totals.served }}</b></div>
+    <div><span>Clients approved</span><b>{{ totals.approved }}</b></div>
   </section>
 
   <div class="dashboard-grid">
@@ -87,7 +87,7 @@
     <div class="stats analytics-stats">
       <div><span>Requests received</span><b>{{ analytics.requests_received }}</b></div>
       <div><span>Appointments scheduled</span><b>{{ analytics.appointments_scheduled }}</b></div>
-      <div><span>Clients served</span><b>{{ analytics.served }}</b></div>
+      <div><span>Clients approved</span><b>{{ analytics.clients_approved }}</b></div>
       <div><span>Avg. request-to-schedule</span><b>{% if analytics.average_wait_hours is not none %}{{ analytics.average_wait_hours }}h{% else %}—{% endif %}</b></div>
     </div>
     <div class="stats analytics-stats">
@@ -109,7 +109,7 @@
           <div class="trend-row">
             <span>{{ item.bucket }}</span>
             <div><i style="width: {{ item.width }}%"></i></div>
-            <b>{{ item.requests }} requests · {{ item.served }} served</b>
+            <b>{{ item.requests }} requests · {{ item.approved }} approved</b>
           </div>
         {% else %}
           <p class="empty">No data for this date range.</p>

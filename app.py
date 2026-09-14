@@ -810,9 +810,6 @@ def build_analytics(start_date, end_date, trend):
             "monthly": "strftime('%Y-%m', {column})",
         }[trend]
     request_bucket = bucket_expression.format(column="created_at")
-    appointment_bucket = bucket_expression.format(
-        column="appointment_date::date" if using_postgres(database) else "appointment_date"
-    )
 
     requests_received = database.execute(
         """
@@ -827,6 +824,13 @@ def build_analytics(start_date, end_date, trend):
         WHERE appointment_date BETWEEN ? AND ?
         """,
         appointment_params,
+    ).fetchone()[0]
+    clients_approved = database.execute(
+        """
+        SELECT COUNT(*) FROM client_requests
+        WHERE status='Scheduled' AND date(created_at) BETWEEN ? AND ?
+        """,
+        request_params,
     ).fetchone()[0]
     served = database.execute(
         """
@@ -849,17 +853,7 @@ def build_analytics(start_date, end_date, trend):
         """,
         appointment_params,
     ).fetchone()[0]
-    approval_rate = round(
-        100 * database.execute(
-            """
-            SELECT COUNT(*) FROM appointments
-            WHERE appointment_date BETWEEN ? AND ?
-              AND status IN ('Approved', 'Finished')
-            """,
-            appointment_params,
-        ).fetchone()[0] / appointments_scheduled,
-        1,
-    ) if appointments_scheduled else 0
+    approval_rate = round(100 * clients_approved / requests_received, 1) if requests_received else 0
     outcome_total = served + cancelled + no_shows
     completed_service_rate = round(100 * served / appointments_scheduled, 1) if appointments_scheduled else 0
     cancellation_rate = round(100 * cancelled / outcome_total, 1) if outcome_total else 0
@@ -913,21 +907,21 @@ def build_analytics(start_date, end_date, trend):
         """,
         request_params,
     ).fetchall()
-    served_trend = database.execute(
+    approved_trend = database.execute(
         f"""
-        SELECT {appointment_bucket} AS bucket, COUNT(*) AS count
-        FROM appointments
-        WHERE appointment_date BETWEEN ? AND ? AND status='Finished'
+        SELECT {request_bucket} AS bucket, COUNT(*) AS count
+        FROM client_requests
+        WHERE status='Scheduled' AND date(created_at) BETWEEN ? AND ?
         GROUP BY bucket
         ORDER BY bucket
         """,
-        appointment_params,
+        request_params,
     ).fetchall()
     trend_counts = {}
     for row in request_trend:
-        trend_counts.setdefault(row["bucket"], {"bucket": row["bucket"], "requests": 0, "served": 0})["requests"] = row["count"]
-    for row in served_trend:
-        trend_counts.setdefault(row["bucket"], {"bucket": row["bucket"], "requests": 0, "served": 0})["served"] = row["count"]
+        trend_counts.setdefault(row["bucket"], {"bucket": row["bucket"], "requests": 0, "approved": 0})["requests"] = row["count"]
+    for row in approved_trend:
+        trend_counts.setdefault(row["bucket"], {"bucket": row["bucket"], "requests": 0, "approved": 0})["approved"] = row["count"]
     trends = [trend_counts[bucket] for bucket in sorted(trend_counts)]
     max_trend = max((item["requests"] for item in trends), default=1)
     for item in trends:
@@ -968,6 +962,7 @@ def build_analytics(start_date, end_date, trend):
         "trend": trend,
         "requests_received": requests_received,
         "appointments_scheduled": appointments_scheduled,
+        "clients_approved": clients_approved,
         "served": served,
         "cancelled": cancelled,
         "no_shows": no_shows,
@@ -1011,7 +1006,7 @@ def analytics_pdf_report(analytics):
         ["Metric", "Value"],
         ["Requests received", str(analytics["requests_received"])],
         ["Appointments scheduled", str(analytics["appointments_scheduled"])],
-        ["Clients served", str(analytics["served"])],
+        ["Clients approved", str(analytics["clients_approved"])],
         ["Cancelled", str(analytics["cancelled"])],
         ["No-shows", str(analytics["no_shows"])],
         ["Approval rate", f"{analytics['approval_rate']}%"],
@@ -1034,8 +1029,8 @@ def analytics_pdf_report(analytics):
         ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
     ]))
     story.extend([metric_table, Spacer(1, 7 * mm), Paragraph("Trend", styles["Heading2"])])
-    trend_rows = [["Period", "Requests", "Served"]] + [
-        [item["bucket"], str(item["requests"]), str(item["served"])] for item in analytics["trends"]
+    trend_rows = [["Period", "Requests", "Approved"]] + [
+        [item["bucket"], str(item["requests"]), str(item["approved"])] for item in analytics["trends"]
     ]
     if len(trend_rows) == 1:
         trend_rows.append(["No data", "0", "0"])
@@ -1343,10 +1338,7 @@ def dashboard():
     start_date, end_date, trend = analytics_range()
 
     totals = {
-        "all": (
-            database.execute("SELECT COUNT(*) FROM client_requests").fetchone()[0]
-            + database.execute("SELECT COUNT(*) FROM appointments").fetchone()[0]
-        ),
+        "all": database.execute("SELECT COUNT(*) FROM client_requests").fetchone()[0],
         "pending": database.execute(
             "SELECT COUNT(*) FROM client_requests WHERE status='Waiting for schedule'"
         ).fetchone()[0],
@@ -1357,8 +1349,8 @@ def dashboard():
             """,
             (today,),
         ).fetchone()[0],
-        "served": database.execute(
-            "SELECT COUNT(*) FROM appointments WHERE status='Finished'"
+        "approved": database.execute(
+            "SELECT COUNT(*) FROM client_requests WHERE status='Scheduled'"
         ).fetchone()[0],
     }
 
@@ -1415,7 +1407,7 @@ def export_analytics_csv():
     writer.writerows([
         ["Requests received", analytics["requests_received"]],
         ["Appointments scheduled", analytics["appointments_scheduled"]],
-        ["Clients served", analytics["served"]],
+        ["Clients approved", analytics["clients_approved"]],
         ["Cancelled", analytics["cancelled"]],
         ["No-shows", analytics["no_shows"]],
         ["Approval rate", f"{analytics['approval_rate']}%"],
@@ -1427,9 +1419,9 @@ def export_analytics_csv():
         ["Busiest time", format_time(analytics["busiest_time"]) if analytics["busiest_time"] else "No data"],
     ])
     writer.writerow([])
-    writer.writerow(["Trend period", "Requests received", "Clients served"])
+    writer.writerow(["Trend period", "Requests received", "Clients approved"])
     for item in analytics["trends"]:
-        writer.writerow([item["bucket"], item["requests"], item["served"]])
+        writer.writerow([item["bucket"], item["requests"], item["approved"]])
     filename = f"smilecare-analytics-{start_date}-to-{end_date}.csv"
     return Response(
         stream.getvalue(),

@@ -255,6 +255,32 @@ class SchedulingSystemTests(unittest.TestCase):
         self.assertFalse(scheduling_app.valid_password("ALLUPPERCASE9"))
         self.assertFalse(scheduling_app.valid_password("NoDigitsHere"))
 
+    def test_analytics_count_requests_without_double_counting_approved_clients(self):
+        with scheduling_app.app.app_context():
+            database = scheduling_app.db()
+            for code, status, phone in (
+                ("ANALYTICS-WAITING", "Waiting for schedule", "09170000001"),
+                ("ANALYTICS-SCHEDULED", "Scheduled", "09170000002"),
+            ):
+                database.execute(
+                    """
+                    INSERT INTO client_requests (
+                        request_code, last_name, first_name, birth_date, gender, barangay,
+                        category, contact_number, contact_key, privacy_consent, status
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)
+                    """,
+                    (code, "Analytics", "Client", "1990-01-01", "Others", "Barangay One",
+                     "Regular", phone, phone, status),
+                )
+            database.commit()
+            today = scheduling_app.clinic_today().isoformat()
+            analytics = scheduling_app.build_analytics(today, today, "daily")
+
+        self.assertEqual(analytics["requests_received"], 2)
+        self.assertEqual(analytics["clients_approved"], 1)
+        self.assertEqual(analytics["approval_rate"], 50.0)
+        self.assertEqual(analytics["trends"][0]["approved"], 1)
+
     def test_default_clinic_configuration_generates_existing_schedule(self):
         with scheduling_app.app.app_context():
             configuration = scheduling_app.clinic_configuration()
