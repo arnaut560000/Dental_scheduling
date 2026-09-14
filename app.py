@@ -71,6 +71,12 @@ PRIVACY_NOTICE_VERSION = "2026-09-13"
 CLINIC_DAYS = {0, 2, 4}  # Monday, Wednesday, Friday
 VALID_CATEGORIES = {"Regular", "PWD", "Senior Citizen"}
 VALID_GENDERS = {"Female", "Male", "Others"}
+BARANGAYS = [
+    "Barangay 1",
+    "Barangay 2",
+    "Barangay 3",
+    # Add every Talavera barangay here.
+]
 SLOT_TIMES = [
     f"{hour:02d}:{minute:02d}"
     for hour in range(8, 12)
@@ -1236,8 +1242,8 @@ def request_appointment():
             flash("Complete all required fields.", "error")
         elif any(len(fields[name]) > 80 for name in ("last_name", "first_name")) or len(fields["middle_initial"]) > 5:
             flash("Please use a shorter client name.", "error")
-        elif not 2 <= len(fields["barangay"]) <= 100:
-            flash("Enter a valid barangay name.", "error")
+        elif fields["barangay"] not in BARANGAYS:
+            flash("Choose a valid barangay.", "error")
         elif not valid_birth_date(fields["birth_date"]):
             flash("Enter a valid birth date.", "error")
         elif len(category_values) != 1 or fields["category"] not in VALID_CATEGORIES:
@@ -1284,6 +1290,7 @@ def request_appointment():
     return render_template(
         "request.html",
         cooldown_days=REQUEST_COOLDOWN_DAYS,
+        barangays=BARANGAYS,
     )
 
 
