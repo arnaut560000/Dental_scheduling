@@ -4,6 +4,7 @@
   --pale: #edf7f4;
   --line: #d9e5e1;
   --orange: #f4a33c;
+  --staff-sidebar-width: 320px;
 }
 
 * { box-sizing: border-box; }
@@ -32,7 +33,7 @@ body {
   display: block;
   width: auto;
   max-width: 100%;
-  height: 56px;
+  height: 78px;
   object-fit: contain;
   object-position: left center;
 }
@@ -41,7 +42,7 @@ body {
 .public-layout .site-header {
   display: flex;
   align-items: center;
-  min-height: 76px;
+  min-height: 104px;
   gap: 24px;
   padding: 12px max(5vw, 24px);
 }
@@ -71,7 +72,7 @@ body {
   z-index: 20;
   display: flex;
   flex-direction: column;
-  width: 272px;
+  width: var(--staff-sidebar-width);
   padding: 28px 18px;
   border-right: 1px solid var(--line);
   border-bottom: 0;
@@ -87,7 +88,7 @@ body {
 .staff-layout .brand img {
   width: 100%;
   height: auto;
-  max-height: 105px;
+  max-height: 135px;
 }
 
 .staff-layout .site-header nav {
@@ -155,12 +156,12 @@ footer {
 
 .staff-layout main {
   max-width: none;
-  margin: 0 0 0 272px;
+  margin: 0 0 0 var(--staff-sidebar-width);
   padding: 48px 40px 64px;
 }
 
 .staff-layout footer {
-  margin-left: 272px;
+  margin-left: var(--staff-sidebar-width);
 }
 .hero { max-width: 720px; margin-bottom: 30px; }
 .hero h1, h1 { font-size: clamp(30px, 5vw, 46px); line-height: 1.1; margin: 6px 0 14px; }
@@ -386,7 +387,7 @@ dialog::backdrop { background: #0f292680; }
   }
 
   .brand img {
-    height: 46px;
+    height: 58px;
   }
 
   .staff-layout .site-header nav {
