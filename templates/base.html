@@ -6,6 +6,18 @@
     <title>{% block title %}Free Tooth Removal{% endblock %}</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
     <meta name="csrf-token" content="{{ csrf_token() }}">
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="{{ config.CLINIC_NAME }}">
+    <meta property="og:title" content="LIBRENG BUNOT · {{ config.CLINIC_NAME }}">
+    <meta property="og:description" content="Free tooth-removal online request form for Talavera Community Dental Clinic.">
+    <meta property="og:url" content="{{ share_url }}">
+    <meta property="og:image" content="{{ social_image_url }}">
+    <meta property="og:image:type" content="image/png">
+    <meta property="og:image:alt" content="E-dental Libreng Bunot online request form">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="LIBRENG BUNOT · {{ config.CLINIC_NAME }}">
+    <meta name="twitter:description" content="Free tooth-removal online request form for Talavera Community Dental Clinic.">
+    <meta name="twitter:image" content="{{ social_image_url }}">
   </head>
   <body>
     <header>

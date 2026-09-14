@@ -43,6 +43,7 @@ Do not deploy the SQLite file for public use. Use a hosted PostgreSQL database a
    - `ADMIN_PASSWORD` - first administrator password
    - `SECRET_KEY` - long random secret
    - `PRIVACY_CONTACT` - real clinic email address or contact method for privacy requests
+   - `PUBLIC_URL` - public HTTPS address used for social-media link previews
 
 4. Set `COOKIE_SECURE=1`, `CLINIC_NAME`, and an appropriate hosting plan.
 5. Set Render's health-check path to `/health` if you create the service manually.

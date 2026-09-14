@@ -133,6 +133,13 @@ class SchedulingSystemTests(unittest.TestCase):
         self.assertEqual(row["gender"], "Others")
         self.assertEqual(row["privacy_notice_version"], scheduling_app.PRIVACY_NOTICE_VERSION)
 
+    def test_public_page_includes_the_social_link_preview_image(self):
+        response = self.client.get("/", base_url="https://clinic.example")
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b'property="og:image"', response.data)
+        self.assertIn(b"/static/edental-link-preview.png", response.data)
+        self.assertIn(b'name="twitter:card" content="summary_large_image"', response.data)
+
     def test_cancelled_slot_becomes_available_and_can_be_reused(self):
         appointment_date = self.next_monday()
         self.insert_appointment(appointment_date, "08:00", "Cancelled")

@@ -47,6 +47,7 @@ app.config.update(
     MAX_CONTENT_LENGTH=64 * 1024,
     CLINIC_NAME=os.environ.get("CLINIC_NAME", "SmileCare"),
     PRIVACY_CONTACT=os.environ.get("PRIVACY_CONTACT", "the clinic administrator"),
+    PUBLIC_URL=os.environ.get("PUBLIC_URL", "").rstrip("/"),
     SESSION_COOKIE_HTTPONLY=True,
     SESSION_COOKIE_SAMESITE="Lax",
     SESSION_COOKIE_SECURE=os.environ.get("COOKIE_SECURE") == "1",
@@ -615,11 +616,14 @@ def clinic_days_label(days):
 @app.context_processor
 def inject_clinic_schedule_summary():
     configuration = clinic_configuration()
+    public_url = app.config["PUBLIC_URL"] or request.url_root.rstrip("/")
     return {
         "clinic_schedule_summary": (
             f"{clinic_days_label(configuration['days'])} · "
             f"{configuration['daily_limit']} clients per day"
-        )
+        ),
+        "share_url": f"{public_url}{url_for('request_appointment')}",
+        "social_image_url": f"{public_url}{url_for('static', filename='edental-link-preview.png')}",
     }
 
 

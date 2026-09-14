@@ -20,3 +20,5 @@ services:
         value: "SmileCare"
       - key: PRIVACY_CONTACT
         sync: false
+      - key: PUBLIC_URL
+        value: "https://talavera-edental.onrender.com"
