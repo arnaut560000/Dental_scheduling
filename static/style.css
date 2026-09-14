@@ -276,25 +276,46 @@ dialog::backdrop { background: #0f292680; }
 }
 
 @media (max-width: 980px) {
-  header {
+  .staff-layout .site-header{
+    position: static;
+    width: 100%;
+    min-height: auto;
+    flex-direction: row;
     align-items: flex-start;
     flex-wrap: wrap;
+    padding: 16px;
   }
 
-  header > nav {
+  .staff-layout .brad {
+    padding: 6px 10px;
+    border-button: 0;
+  }
+
+  .staff-layout .site-header nav {
     flex: 1 1 100%;
-    width: 100%;
-    justify-content: flex-end;
+    flex-direction: row;
+    flex-wrap: wrap;
+    overflow: visible;
   }
 
-  .staff-name {
-    border-right: 0;
-    border-bottom: 1px solid var(--line);
+   .staff-layout nav a {
+    width: auto;
+  }
+
+  .staff-layout main,
+  .staff-layout footer {
+    max-width: 1120px;
+    margin-left: auto;
+    margin-right: auto;
+  }
+
+  .staff-layout main {
+    padding: 30px 16px 64px;
   }
 }
 
 @media (max-width: 560px) {
-  header {
+  .public-layout .site-header {
     gap: 12px;
     padding: 14px 16px;
   }
@@ -303,20 +324,20 @@ dialog::backdrop { background: #0f292680; }
     font-size: 20px;
   }
 
-  nav {
+  .staff-layout .site-header nav {
     gap: 5px;
   }
 
-  nav a,
-  .admin-link {
-    min-height: 34px;
-    padding: 7px 9px;
+  .staff-layout nav a {
+    flex: 1 1 calc(50% - 5px);
+    justify-content: center;
+    min-height: 38px;
+    padding: 8px;
     font-size: 12px;
   }
 
-  .staff-name {
+  .staff-layout .staff-name {
     width: 100%;
-    padding-left: 0;
   }
 
   .stats {
