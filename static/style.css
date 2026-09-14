@@ -95,8 +95,28 @@ button:focus-visible,
 
 
 
-main { max-width: 1120px; margin: auto; padding: 48px 24px 64px; }
-footer { text-align: center; padding: 28px; color: #637875; font-size: 13px; }
+main {
+  max-width: 1120px;
+  margin: auto;
+  padding: 48px 24px 64px;
+}
+
+footer {
+  padding: 28px;
+  color: #637875;
+  font-size: 13px;
+  text-align: center;
+}
+
+.staff-layout main {
+  max-width: none;
+  margin: 0 0 0 272px;
+  padding: 48px 40px 64px;
+}
+
+.staff-layout footer {
+  margin-left: 272px;
+}
 .hero { max-width: 720px; margin-bottom: 30px; }
 .hero h1, h1 { font-size: clamp(30px, 5vw, 46px); line-height: 1.1; margin: 6px 0 14px; }
 .hero p { font-size: 17px; color: #58706d; }
