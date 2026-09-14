@@ -16,22 +16,16 @@ body {
 }
 
 
-header {
-  min-height: 76px;
-  padding: 12px max(5vw, 24px);
+.site-header {
   background: #fff;
   border-bottom: 1px solid var(--line);
-  display: flex;
-  align-items: center;
-  gap: 24px;
 }
 
 .brand {
-  flex: 0 0 auto;
-  font-weight: 800;
-  font-size: 22px;
-  line-height: 1.1;
   color: var(--green);
+  font-size: 22px;
+  font-weight: 800;
+  line-height: 1.1;
   text-decoration: none;
 }
 
@@ -43,37 +37,92 @@ header {
   font-weight: 500;
 }
 
-header > nav,
-header > .admin-link {
-  margin-left: auto;
-}
-
-nav {
+/* Public client page: brand left, login button right */
+.public-layout .site-header {
   display: flex;
   align-items: center;
-  justify-content: flex-end;
-  flex-wrap: wrap;
-  gap: 8px;
+  min-height: 76px;
+  gap: 24px;
+  padding: 12px max(5vw, 24px);
 }
 
-nav a,
-.admin-link {
+.public-layout .admin-link {
   display: inline-flex;
   align-items: center;
   min-height: 38px;
-  padding: 8px 11px;
+  margin-left: auto;
+  padding: 8px 14px;
   border-radius: 8px;
+  background: var(--green);
+  color: #fff;
+  font-size: 14px;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.public-layout .admin-link:hover {
+  background: #126a5a;
+}
+
+/* Staff pages: permanent navigation sidebar on the left */
+.staff-layout .site-header {
+  position: fixed;
+  inset: 0 auto 0 0;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  width: 272px;
+  padding: 28px 18px;
+  border-right: 1px solid var(--line);
+  border-bottom: 0;
+  gap: 24px;
+}
+
+.staff-layout .brand {
+  padding: 8px 10px 18px;
+  border-bottom: 1px solid var(--line);
+}
+
+.staff-layout .site-header nav {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+  overflow-y: auto;
+}
+
+.staff-layout nav a {
+  display: flex;
+  align-items: center;
+  min-height: 42px;
+  padding: 10px 12px;
+  border-radius: 9px;
   color: var(--ink);
   font-size: 14px;
   font-weight: 700;
   text-decoration: none;
-  white-space: nowrap;
 }
 
-nav a:hover,
-.admin-link:hover {
+.staff-layout nav a:hover {
   background: var(--pale);
   color: var(--green);
+}
+
+.staff-layout .staff-name {
+  margin-bottom: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: #f7faf9;
+  color: #58706d;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.staff-layout .notify-bell {
+  align-self: flex-start;
+  margin: 4px 0;
 }
 
 nav a:focus-visible,
@@ -83,17 +132,6 @@ button:focus-visible,
   outline: 3px solid #bfe1d8;
   outline-offset: 2px;
 }
-
-.staff-name {
-  padding: 8px 10px;
-  border-right: 1px solid var(--line);
-  color: #58706d;
-  font-size: 12px;
-  font-weight: 700;
-  white-space: nowrap;
-}
-
-
 
 main {
   max-width: 1120px;
