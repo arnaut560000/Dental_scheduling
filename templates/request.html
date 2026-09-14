@@ -64,7 +64,17 @@
         </div>
       </div>
       <div class="form-grid">
-        <label>Barangay*<input name="barangay" maxlength="100" required value="{{ request.form.barangay }}"></label>
+        <label>
+          Barangay*
+          <select name="barangay" required>
+            <option value="">Select your barangay</option>
+            {% for barangay in barangays %}
+              <option value="{{ barangay }}" {% if request.form.barangay == barangay %}selected{% endif %}>
+                {{ barangay }}
+            </option>
+          {% endfor %}
+          </select>
+        </label>
         <label>
           *Make sure the Contact number is active*
           <input
