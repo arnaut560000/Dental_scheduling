@@ -100,7 +100,18 @@
           >
           <small>Enter exactly 11 digits.</small>
         </label>
-        <label class="full-width">Email address <small>Optional — used only if the clinic needs another way to contact you.</small><input type="email" name="email" autocomplete="email" value="{{ request.form.email }}"></label>
+        <label class="full-width">
+          Email address <small>(optional)</small>
+          <input
+            type="email"
+            name="email"
+            autocomplete="email"
+            maxlength="254"
+            placeholder="name@example.com"
+            value="{{ request.form.email }}"
+          >
+          <small>Leave this blank if the clinic should contact the client through the phone number only.</small>
+        </label>
       </div>
     </section>
 

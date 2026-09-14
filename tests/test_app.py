@@ -82,7 +82,7 @@ class SchedulingSystemTests(unittest.TestCase):
         days_until_monday = (7 - date.today().weekday()) % 7
         return date.today() + timedelta(days=days_until_monday or 7)
 
-    def insert_appointment(self, appointment_date, appointment_time, status):
+    def insert_appointment(self, appointment_date, appointment_time, status, category="Regular"):
         with scheduling_app.app.app_context():
             database = scheduling_app.db()
             database.execute(
@@ -98,7 +98,7 @@ class SchedulingSystemTests(unittest.TestCase):
                     "1988-04-05",
                     "Others",
                     "Barangay One",
-                    "Regular",
+                    category,
                     "09171234567",
                     "09171234567",
                     "scheduler-hidden@example.com",
@@ -132,6 +132,18 @@ class SchedulingSystemTests(unittest.TestCase):
             ).fetchone()
         self.assertEqual(row["gender"], "Others")
         self.assertEqual(row["privacy_notice_version"], scheduling_app.PRIVACY_NOTICE_VERSION)
+
+    def test_client_records_can_be_filtered_by_sector(self):
+        appointment_date = self.next_monday()
+        self.insert_appointment(appointment_date, "08:00", "Approved", category="PWD")
+        self.insert_appointment(appointment_date, "08:15", "Finished", category="Regular")
+        self.sign_in_as_scheduler()
+
+        response = self.client.get("/admin/appointments?category=PWD")
+
+        self.assertIn(b"Client, Approved", response.data)
+        self.assertNotIn(b"Client, Finished", response.data)
+        self.assertIn(b'<option value="PWD" selected>', response.data)
 
     def test_daily_request_limit_closes_the_public_form_and_blocks_submissions(self):
         with scheduling_app.app.app_context():

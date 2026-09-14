@@ -2012,14 +2012,19 @@ def reject_request(request_id):
 def appointments():
     selected_date = request.args.get("date", "")
     status = request.args.get("status", "")
+    category_filter = request.args.get("category", "")
     search = request.args.get("search", "").strip()
     start_date = request.args.get("start_date", "")
     end_date = request.args.get("end_date", "")
+    if category_filter not in VALID_CATEGORIES:
+        category_filter = ""
     query, params = "SELECT * FROM appointments WHERE 1=1", []
     if selected_date:
         query += " AND appointment_date=?"; params.append(selected_date)
     if status:
         query += " AND status=?"; params.append(status)
+    if category_filter:
+        query += " AND category=?"; params.append(category_filter)
     if search:
         query += " AND (LOWER(last_name || ' ' || first_name || ' ' || COALESCE(middle_initial, '')) LIKE ? OR contact_key LIKE ?)"
         params.extend([f"%{search.lower()}%", f"%{normalize_contact(search)}%"])
@@ -2052,6 +2057,8 @@ def appointments():
         waiting_requests=waiting_requests,
         selected_date=selected_date,
         selected_status=status,
+        selected_category=category_filter,
+        categories=["Regular", "PWD", "Senior Citizen", "Pregnant Woman"],
         search=search,
         start_date=start_date,
         end_date=end_date,

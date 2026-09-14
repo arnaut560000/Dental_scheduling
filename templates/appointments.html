@@ -95,6 +95,15 @@
         {% endfor %}
       </select>
     </label>
+    <label>
+      Client sector
+      <select name="category">
+        <option value="">All sectors</option>
+        {% for item in categories %}
+          <option value="{{ item }}" {% if selected_category == item %}selected{% endif %}>{{ item }}</option>
+        {% endfor %}
+      </select>
+    </label>
     <button>Search records</button>
     {% if selected_date and session.role == 'admin' %}
       <a class="button-link secondary" href="{{ url_for('export_day', date=selected_date) }}">Export this day</a>
