@@ -20,7 +20,7 @@
     <meta name="twitter:image" content="{{ social_image_url }}">
   </head>
  {% set is_public_client_page = request.endpoint in ('request_appointment', 'privacy_notice') %}
-<body class="{% if session.user_id and not is_public_client_page %}staff-layout{% else %}public-layout{% endif %}">
+<body class="{% if has_authenticated_staff and not is_public_client_page %}staff-layout{% else %}public-layout{% endif %}">
   <header class="site-header">
       <a class="brand" href="{{ url_for('request_appointment') }}" aria-label="Municipal Dental Service Appointment and Management System">
         <img
@@ -28,7 +28,7 @@
           alt="Municipal Dental Service Appointment and Management System"
         >
       </a>
-      {% if session.user_id and not is_public_client_page %}
+      {% if has_authenticated_staff and not is_public_client_page %}
         <nav>
           <span class="staff-name">Signed in: {{ session.display_name or session.username }}</span>
           <a href="{{ url_for('dashboard') }}">Dashboard</a>
@@ -59,7 +59,7 @@
     </main>
     <footer>Free tooth removal scheduling · {{ clinic_schedule_summary }}</footer>
 
-    {% if session.user_id and not is_public_client_page %}
+    {% if has_authenticated_staff and not is_public_client_page %}
       <dialog id="notify-modal" aria-labelledby="notify-heading">
         <div class="modal-header">
           <div>

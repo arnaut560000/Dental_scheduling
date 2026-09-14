@@ -202,6 +202,18 @@ class SchedulingSystemTests(unittest.TestCase):
         self.assertNotIn(b">Accounts</a>", response.data)
         self.assertNotIn(b"notify-modal", response.data)
 
+    def test_login_page_hides_staff_navigation_until_login_is_verified(self):
+        self.sign_in_as_admin()
+
+        login_page = self.client.get("/admin/login")
+        self.assertIn(b"Staff sign in", login_page.data)
+        self.assertNotIn(b">Dashboard</a>", login_page.data)
+        self.assertNotIn(b">Clients</a>", login_page.data)
+
+        dashboard_page = self.client.get("/admin")
+        self.assertIn(b">Dashboard</a>", dashboard_page.data)
+        self.assertIn(b">Clients</a>", dashboard_page.data)
+
     def test_cancelled_slot_becomes_available_and_can_be_reused(self):
         appointment_date = self.next_monday()
         self.insert_appointment(appointment_date, "08:00", "Cancelled")

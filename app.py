@@ -684,6 +684,18 @@ def inject_clinic_schedule_summary():
     }
 
 
+@app.context_processor
+def inject_authenticated_staff_state():
+    """Expose verified staff authentication to shared templates.
+
+    A browser can retain old session values after an account is disabled or a
+    login attempt has not succeeded. Only ``login_required`` sets
+    ``g.current_user``, so the header must use this value instead of raw
+    session data.
+    """
+    return {"has_authenticated_staff": getattr(g, "current_user", None) is not None}
+
+
 def init_db():
     """Apply each database migration once during application startup."""
     database = db()
