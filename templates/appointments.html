@@ -127,7 +127,7 @@
                   <td>{{ appointment.contact_number }}{% if session.role == 'admin' and appointment.email %}<br>{{ appointment.email }}{% endif %}</td>
                   <td>
                     <span class="badge approved">Approved</span><br>
-                    <span class="contact-status {{ appointment.contact_status|lower|replace(' ', '-') }}">{{ appointment.contact_status }}</span>
+                    <button class="small secondary-button" type="submit" name="contact_status" value="Texted" {% if appointment.contact_status == 'Texted' %}disabled{% endif %}>Texted</button>
                   </td>
                   <td>
                     <div class="inline-actions">
