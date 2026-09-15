@@ -10,37 +10,182 @@
     </div>
   </div>
 
-  <section class="card table-card">
-    <h2>Waiting for schedule</h2>
-    <p class="notice">Clients are listed by submission time. Schedule or reject the earliest request first.</p>
-    {% if waiting_requests %}
-      <table class="wide">
-        <thead>
-          <tr><th>Submitted</th><th>Client</th><th>Details</th><th>Contact</th><th>Action</th></tr>
-        </thead>
-        <tbody>
-          {% for client_request in waiting_requests %}
-            <tr>
-              <td><strong>{{ client_request.created_at }}</strong><br><span class="notice">Queue #{{ loop.index }}</span></td>
-              <td><strong>{{ client_request.last_name }}, {{ client_request.first_name }} {{ client_request.middle_initial }}</strong><br>{% if session.role == 'admin' %}{{ client_request.birth_date }} · {% endif %}{{ client_request.gender or 'Not recorded' }}</td>
-              <td>{{ client_request.barangay }}<br>{{ client_request.category }}</td>
-              <td>{{ client_request.contact_number }}{% if session.role == 'admin' and client_request.email %}<br>{{ client_request.email }}{% endif %}</td>
-              <td>
-                {% if loop.first %}
-                  <button class="small schedule-button" type="button" data-request-id="{{ client_request.id }}" data-client-name="{{ client_request.last_name }}, {{ client_request.first_name }} {{ client_request.middle_initial or '' }}">Schedule</button>
-                  <button class="small secondary-button reject-button" type="button" data-request-id="{{ client_request.id }}" data-client-name="{{ client_request.last_name }}, {{ client_request.first_name }} {{ client_request.middle_initial or '' }}">Reject</button>
-                {% else %}
-                  <span class="notice">Waiting for earlier clients</span>
-                {% endif %}
-              </td>
-            </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    {% else %}
-      <p class="empty">No clients are waiting for a schedule.</p>
+  <nav class="client-section-tabs" aria-label="Client management sections">
+    <a class="client-section-tab {% if client_section == 'pending' %}active{% endif %}" href="{{ url_for('appointments', section='pending') }}">
+      <span>Pending</span>
+      <strong>Waiting for schedule</strong>
+      <b>{{ section_counts.pending }}</b>
+    </a>
+    <a class="client-section-tab {% if client_section == 'approved' %}active{% endif %}" href="{{ url_for('appointments', section='approved') }}">
+      <span>Approved</span>
+      <strong>Ready for client contact</strong>
+      <b>{{ section_counts.approved }}</b>
+    </a>
+    <a class="client-section-tab {% if client_section == 'cancelled' %}active{% endif %}" href="{{ url_for('appointments', section='cancelled') }}">
+      <span>Cancelled</span>
+      <strong>No response or cancelled</strong>
+      <b>{{ section_counts.cancelled }}</b>
+    </a>
+  </nav>
+
+  {% if client_section == 'pending' %}
+    <section class="card table-card">
+      <div class="section-summary">
+        <div>
+          <p class="eyebrow">PENDING REQUESTS</p>
+          <h2>Waiting for schedule</h2>
+          <p class="notice">The first submitted client is first in line. Schedule or reject that request before moving to the next one.</p>
+        </div>
+        <span class="section-count">{{ section_counts.pending }} in queue</span>
+      </div>
+      {% if waiting_requests %}
+        <table class="wide">
+          <thead>
+            <tr><th>Queue</th><th>Client</th><th>Sector and address</th><th>Contact</th><th>Next action</th></tr>
+          </thead>
+          <tbody>
+            {% for client_request in waiting_requests %}
+              <tr>
+                <td><strong>#{{ loop.index }}</strong><br><span class="notice">{{ client_request.created_at }}</span></td>
+                <td><strong>{{ client_request.last_name }}, {{ client_request.first_name }} {{ client_request.middle_initial }}</strong><br>{% if session.role == 'admin' %}{{ client_request.birth_date }} · {% endif %}{{ client_request.gender or 'Not recorded' }}</td>
+                <td><strong>{{ client_request.category }}</strong><br>{{ client_request.barangay }}</td>
+                <td>{{ client_request.contact_number }}{% if session.role == 'admin' and client_request.email %}<br>{{ client_request.email }}{% endif %}</td>
+                <td>
+                  {% if loop.first %}
+                    <button class="small schedule-button" type="button" data-request-id="{{ client_request.id }}" data-client-name="{{ client_request.last_name }}, {{ client_request.first_name }} {{ client_request.middle_initial or '' }}">Schedule client</button>
+                    <button class="small secondary-button reject-button" type="button" data-request-id="{{ client_request.id }}" data-client-name="{{ client_request.last_name }}, {{ client_request.first_name }} {{ client_request.middle_initial or '' }}">Reject request</button>
+                  {% else %}
+                    <span class="notice">Waiting for earlier clients</span>
+                  {% endif %}
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      {% else %}
+        <p class="empty">No clients are waiting for a schedule.</p>
+      {% endif %}
+    </section>
+
+    {% if rejected_requests %}
+      <section class="card table-card section-follow-up">
+        <h2>Recently rejected requests</h2>
+        <p class="notice">These requests were not added to the appointment schedule.</p>
+        <table class="wide">
+          <thead><tr><th>Submitted</th><th>Client</th><th>Reason</th></tr></thead>
+          <tbody>
+            {% for client_request in rejected_requests %}
+              <tr>
+                <td>{{ client_request.created_at }}</td>
+                <td><strong>{{ client_request.last_name }}, {{ client_request.first_name }}</strong><br>{{ client_request.contact_number }}</td>
+                <td>{{ client_request.status_reason }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </section>
     {% endif %}
-  </section>
+  {% else %}
+    <form class="filters card" method="get">
+      <input type="hidden" name="section" value="{{ client_section }}">
+      <label>Search client or phone<input type="search" name="search" value="{{ search }}" placeholder="Name or 11-digit phone"></label>
+      <label>Date<input type="date" name="date" value="{{ selected_date }}"></label>
+      <label>From<input type="date" name="start_date" value="{{ start_date }}"></label>
+      <label>To<input type="date" name="end_date" value="{{ end_date }}"></label>
+      <label>
+        Client sector
+        <select name="category">
+          <option value="">All sectors</option>
+          {% for item in categories %}
+            <option value="{{ item }}" {% if selected_category == item %}selected{% endif %}>{{ item }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <button>Search records</button>
+      {% if selected_date and session.role == 'admin' %}
+        <a class="button-link secondary" href="{{ url_for('export_day', date=selected_date) }}">Export this day</a>
+      {% endif %}
+    </form>
+
+    <section class="card table-card">
+      {% if client_section == 'approved' %}
+        <div class="section-summary">
+          <div>
+            <p class="eyebrow">APPROVED APPOINTMENTS</p>
+            <h2>Contact and appointment follow-up</h2>
+            <p class="notice">Record how the client was contacted. Use Manage for notes, rescheduling, cancellations, or marking a client served.</p>
+          </div>
+          <span class="section-count">{{ section_counts.approved }} approved</span>
+        </div>
+        {% if appointments %}
+          <table class="wide">
+            <thead><tr><th>Schedule</th><th>Client</th><th>Sector and address</th><th>Contact</th><th>Follow-up</th><th>Actions</th></tr></thead>
+            <tbody>
+              {% for appointment in appointments %}
+                <tr>
+                  <td>{{ appointment.appointment_date }}<br><strong>{{ appointment.appointment_time|time12 }}</strong></td>
+                  <td><strong>{{ appointment.last_name }}, {{ appointment.first_name }} {{ appointment.middle_initial }}</strong><br>{% if session.role == 'admin' %}{{ appointment.birth_date }} · {% endif %}{{ appointment.gender or 'Not recorded' }}</td>
+                  <td><strong>{{ appointment.category }}</strong><br>{{ appointment.barangay }}</td>
+                  <td>{{ appointment.contact_number }}{% if session.role == 'admin' and appointment.email %}<br>{{ appointment.email }}{% endif %}</td>
+                  <td>
+                    <span class="badge approved">Approved</span><br>
+                    <span class="contact-status {{ appointment.contact_status|lower|replace(' ', '-') }}">{{ appointment.contact_status }}</span>
+                  </td>
+                  <td>
+                    <div class="inline-actions">
+                      <form method="post" action="{{ url_for('record_client_contact', appointment_id=appointment.id) }}">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <button class="small secondary-button" type="submit" name="contact_status" value="Texted" {% if appointment.contact_status == 'Texted' %}disabled{% endif %}>Texted</button>
+                      </form>
+                      <form method="post" action="{{ url_for('record_client_contact', appointment_id=appointment.id) }}">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <button class="small secondary-button" type="submit" name="contact_status" value="Called" {% if appointment.contact_status == 'Called' %}disabled{% endif %}>Called</button>
+                      </form>
+                      <button class="small manage-button" type="button" data-appointment-id="{{ appointment.id }}" data-client-name="{{ appointment.last_name }}, {{ appointment.first_name }} {{ appointment.middle_initial or '' }}" data-status="{{ appointment.status }}" data-date="{{ appointment.appointment_date }}" data-time="{{ appointment.appointment_time }}" data-notes="{{ appointment.staff_notes or '' }}">Manage</button>
+                      <button class="small secondary-button history-button" type="button" data-appointment-id="{{ appointment.id }}" data-client-name="{{ appointment.last_name }}, {{ appointment.first_name }} {{ appointment.middle_initial or '' }}">History</button>
+                    </div>
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        {% else %}
+          <p class="empty">No approved clients match this search.</p>
+        {% endif %}
+      {% else %}
+        <div class="section-summary">
+          <div>
+            <p class="eyebrow">CANCELLED APPOINTMENTS</p>
+            <h2>No-response and cancelled clients</h2>
+            <p class="notice">Use this section for clients who did not respond on their scheduled day or whose appointment had to be cancelled. The reason stays in their history.</p>
+          </div>
+          <span class="section-count">{{ section_counts.cancelled }} cancelled</span>
+        </div>
+        {% if appointments %}
+          <table class="wide">
+            <thead><tr><th>Original schedule</th><th>Client</th><th>Sector and address</th><th>Contact</th><th>Cancellation reason</th><th>Record</th></tr></thead>
+            <tbody>
+              {% for appointment in appointments %}
+                <tr>
+                  <td>{{ appointment.appointment_date }}<br><strong>{{ appointment.appointment_time|time12 }}</strong></td>
+                  <td><strong>{{ appointment.last_name }}, {{ appointment.first_name }} {{ appointment.middle_initial }}</strong><br>{% if session.role == 'admin' %}{{ appointment.birth_date }} · {% endif %}{{ appointment.gender or 'Not recorded' }}</td>
+                  <td><strong>{{ appointment.category }}</strong><br>{{ appointment.barangay }}</td>
+                  <td>{{ appointment.contact_number }}{% if session.role == 'admin' and appointment.email %}<br>{{ appointment.email }}{% endif %}</td>
+                  <td><span class="badge cancelled">Cancelled</span><br><span class="notice">{{ appointment.status_reason or 'No response was recorded for the scheduled day.' }}</span></td>
+                  <td>
+                    <button class="small manage-button" type="button" data-appointment-id="{{ appointment.id }}" data-client-name="{{ appointment.last_name }}, {{ appointment.first_name }} {{ appointment.middle_initial or '' }}" data-status="{{ appointment.status }}" data-date="{{ appointment.appointment_date }}" data-time="{{ appointment.appointment_time }}" data-notes="{{ appointment.staff_notes or '' }}">Notes</button>
+                    <button class="small secondary-button history-button" type="button" data-appointment-id="{{ appointment.id }}" data-client-name="{{ appointment.last_name }}, {{ appointment.first_name }} {{ appointment.middle_initial or '' }}">History</button>
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        {% else %}
+          <p class="empty">No cancelled clients match this search.</p>
+        {% endif %}
+      {% endif %}
+    </section>
+  {% endif %}
 
   <dialog id="schedule-modal" aria-labelledby="schedule-heading">
     <div class="modal-header">
@@ -80,75 +225,6 @@
       <button class="danger-button" type="submit">Reject request</button>
     </form>
   </dialog>
-
-  <form class="filters card" method="get">
-    <label>Search client or phone<input type="search" name="search" value="{{ search }}" placeholder="Name or 11-digit phone"></label>
-    <label>Date<input type="date" name="date" value="{{ selected_date }}"></label>
-    <label>From<input type="date" name="start_date" value="{{ start_date }}"></label>
-    <label>To<input type="date" name="end_date" value="{{ end_date }}"></label>
-    <label>
-      Client sector
-      <select name="category">
-        <option value="">All sectors</option>
-        {% for item in categories %}
-          <option value="{{ item }}" {% if selected_category == item %}selected{% endif %}>{{ item }}</option>
-        {% endfor %}
-      </select>
-    </label>
-    <button>Search records</button>
-    {% if selected_date and session.role == 'admin' %}
-      <a class="button-link secondary" href="{{ url_for('export_day', date=selected_date) }}">Export this day</a>
-    {% endif %}
-  </form>
-
-  <section class="card table-card">
-    <h2>Appointment records</h2>
-    {% if appointments %}
-      <table class="wide">
-        <thead>
-          <tr><th>Schedule</th><th>Client</th><th>Details</th><th>Contact</th><th>Status</th><th>Actions</th></tr>
-        </thead>
-        <tbody>
-          {% for appointment in appointments %}
-            <tr>
-              <td>{{ appointment.appointment_date }}<br><strong>{{ appointment.appointment_time|time12 }}</strong></td>
-              <td><strong>{{ appointment.last_name }}, {{ appointment.first_name }} {{ appointment.middle_initial }}</strong><br>{% if session.role == 'admin' %}{{ appointment.birth_date }} · {% endif %}{{ appointment.gender or 'Not recorded' }}</td>
-              <td>{{ appointment.barangay }}<br>{{ appointment.category }}</td>
-              <td>{{ appointment.contact_number }}{% if session.role == 'admin' and appointment.email %}<br>{{ appointment.email }}{% endif %}</td>
-              <td>
-                <span class="badge {{ appointment.status|lower|replace(' ', '-') }}">{{ appointment.status }}</span>
-                {% if appointment.status_reason %}<p class="notice">{{ appointment.status_reason }}</p>{% endif %}
-              </td>
-              <td>
-                <button class="small manage-button" type="button" data-appointment-id="{{ appointment.id }}" data-client-name="{{ appointment.last_name }}, {{ appointment.first_name }} {{ appointment.middle_initial or '' }}" data-status="{{ appointment.status }}" data-date="{{ appointment.appointment_date }}" data-time="{{ appointment.appointment_time }}" data-notes="{{ appointment.staff_notes or '' }}">Manage</button>
-                <button class="small secondary-button history-button" type="button" data-appointment-id="{{ appointment.id }}" data-client-name="{{ appointment.last_name }}, {{ appointment.first_name }} {{ appointment.middle_initial or '' }}">History</button>
-              </td>
-            </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    {% else %}
-      <p class="empty">No appointment records match this search.</p>
-    {% endif %}
-  </section>
-
-  {% if rejected_requests %}
-    <section class="card table-card">
-      <h2>Rejected requests</h2>
-      <table class="wide">
-        <thead><tr><th>Submitted</th><th>Client</th><th>Reason</th></tr></thead>
-        <tbody>
-          {% for client_request in rejected_requests %}
-            <tr>
-              <td>{{ client_request.created_at }}</td>
-              <td><strong>{{ client_request.last_name }}, {{ client_request.first_name }}</strong><br>{{ client_request.contact_number }}</td>
-              <td>{{ client_request.status_reason }}</td>
-            </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </section>
-  {% endif %}
 
   <dialog id="manage-modal" aria-labelledby="manage-heading">
     <div class="modal-header">

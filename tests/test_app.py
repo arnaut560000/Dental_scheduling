@@ -85,7 +85,7 @@ class SchedulingSystemTests(unittest.TestCase):
     def insert_appointment(self, appointment_date, appointment_time, status, category="Regular"):
         with scheduling_app.app.app_context():
             database = scheduling_app.db()
-            database.execute(
+            appointment_id = database.execute(
                 """
                 INSERT INTO appointments (
                     last_name, first_name, birth_date, gender, barangay, category,
@@ -108,6 +108,7 @@ class SchedulingSystemTests(unittest.TestCase):
                 ),
             )
             database.commit()
+            return appointment_id.lastrowid
 
     def test_public_form_accepts_the_gender_option_it_displays(self):
         response = self.client.post(
@@ -139,11 +140,50 @@ class SchedulingSystemTests(unittest.TestCase):
         self.insert_appointment(appointment_date, "08:15", "Finished", category="Regular")
         self.sign_in_as_scheduler()
 
-        response = self.client.get("/admin/appointments?category=PWD")
+        response = self.client.get("/admin/appointments?section=approved&category=PWD")
 
         self.assertIn(b"Client, Approved", response.data)
         self.assertNotIn(b"Client, Finished", response.data)
         self.assertIn(b'<option value="PWD" selected>', response.data)
+
+    def test_approved_section_records_texted_or_called_client_contact(self):
+        appointment_id = self.insert_appointment(
+            self.next_monday(), "08:00", "Approved"
+        )
+        self.sign_in_as_scheduler()
+
+        response = self.client.post(
+            f"/admin/appointments/{appointment_id}/contact-status",
+            data={"contact_status": "Texted"},
+            follow_redirects=True,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b"Client marked as texted.", response.data)
+        with scheduling_app.app.app_context():
+            appointment = scheduling_app.db().execute(
+                "SELECT contact_status FROM appointments WHERE id=?", (appointment_id,)
+            ).fetchone()
+            history = scheduling_app.db().execute(
+                "SELECT action, notes FROM appointment_history WHERE appointment_id=?", (appointment_id,)
+            ).fetchone()
+        self.assertEqual(appointment["contact_status"], "Texted")
+        self.assertEqual(history["action"], "Client contact recorded")
+        self.assertEqual(history["notes"], "Contact method: Texted.")
+
+    def test_client_sections_show_only_their_matching_records(self):
+        appointment_date = self.next_monday()
+        self.insert_appointment(appointment_date, "08:00", "Approved")
+        self.insert_appointment(appointment_date, "08:15", "Cancelled")
+        self.sign_in_as_scheduler()
+
+        approved_page = self.client.get("/admin/appointments?section=approved")
+        cancelled_page = self.client.get("/admin/appointments?section=cancelled")
+
+        self.assertIn(b"Client, Approved", approved_page.data)
+        self.assertNotIn(b"Client, Cancelled", approved_page.data)
+        self.assertIn(b"Client, Cancelled", cancelled_page.data)
+        self.assertNotIn(b"Client, Approved", cancelled_page.data)
 
     def test_daily_request_limit_closes_the_public_form_and_blocks_submissions(self):
         with scheduling_app.app.app_context():
@@ -264,7 +304,7 @@ class SchedulingSystemTests(unittest.TestCase):
             scheduling_app.db().commit()
 
         self.sign_in_as_scheduler()
-        scheduler_page = self.client.get("/admin/appointments")
+        scheduler_page = self.client.get("/admin/appointments?section=approved")
         self.assertNotIn(b"1988-04-05", scheduler_page.data)
         self.assertNotIn(b"1993-02-04", scheduler_page.data)
         self.assertNotIn(b"scheduler-hidden@example.com", scheduler_page.data)
@@ -272,7 +312,7 @@ class SchedulingSystemTests(unittest.TestCase):
         self.assertIn(b"09171234567", scheduler_page.data)
 
         self.sign_in_as_admin()
-        admin_page = self.client.get("/admin/appointments")
+        admin_page = self.client.get("/admin/appointments?section=approved")
         self.assertIn(b"1988-04-05", admin_page.data)
         self.assertIn(b"scheduler-hidden@example.com", admin_page.data)
 
@@ -315,6 +355,13 @@ class SchedulingSystemTests(unittest.TestCase):
         self.assertIn(scheduling_app.ACTIVE_SLOT_MIGRATION, versions)
         self.assertIn(scheduling_app.CLINIC_CONFIGURATION_MIGRATION, versions)
         self.assertIn(scheduling_app.PRIVACY_CONSENT_MIGRATION, versions)
+        self.assertIn(scheduling_app.CONTACT_STATUS_MIGRATION, versions)
+
+        with scheduling_app.app.app_context():
+            appointment_columns = scheduling_app.table_columns(
+                scheduling_app.db(), "appointments"
+            )
+        self.assertIn("contact_status", appointment_columns)
 
         with scheduling_app.app.app_context():
             settings = {

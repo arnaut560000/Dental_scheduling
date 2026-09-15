@@ -72,6 +72,7 @@ PRIVACY_NOTICE_VERSION = "2026-09-13"
 CLINIC_DAYS = {0, 2, 4}  # Monday, Wednesday, Friday
 VALID_CATEGORIES = {"Regular", "PWD", "Senior Citizen", "Pregnant Woman"}
 VALID_GENDERS = {"Female", "Male", "Others"}
+VALID_CONTACT_STATUSES = {"Texted", "Called"}
 BARANGAYS = [
     "Andal Alino (Pob.)",
     "Bagong Sikat",
@@ -245,7 +246,7 @@ def create_postgres_schema(database):
             contact_number TEXT NOT NULL, contact_key TEXT, email TEXT,
             appointment_date TEXT NOT NULL, appointment_time TEXT NOT NULL,
             status TEXT NOT NULL DEFAULT 'Pending', status_reason TEXT,
-            staff_notes TEXT, updated_at TIMESTAMPTZ,
+            staff_notes TEXT, contact_status TEXT NOT NULL DEFAULT 'Not contacted', updated_at TIMESTAMPTZ,
             created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
         )
         """,
@@ -325,7 +326,8 @@ def apply_initial_schema(database):
             birth_date TEXT NOT NULL, gender TEXT NOT NULL, barangay TEXT NOT NULL, category TEXT NOT NULL,
             contact_number TEXT NOT NULL, contact_key TEXT, email TEXT, appointment_date TEXT NOT NULL,
             appointment_time TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'Pending',
-            status_reason TEXT, staff_notes TEXT, updated_at TEXT,
+            status_reason TEXT, staff_notes TEXT,
+            contact_status TEXT NOT NULL DEFAULT 'Not contacted', updated_at TEXT,
             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
         );
         CREATE TABLE IF NOT EXISTS client_requests (
@@ -461,6 +463,7 @@ INITIAL_SCHEMA_MIGRATION = "001_initial_schema"
 ACTIVE_SLOT_MIGRATION = "002_active_appointment_slots"
 CLINIC_CONFIGURATION_MIGRATION = "003_clinic_configuration"
 PRIVACY_CONSENT_MIGRATION = "004_privacy_consent_version"
+CONTACT_STATUS_MIGRATION = "005_appointment_contact_status"
 
 DEFAULT_CLINIC_SETTINGS = {
     "clinic_days": "0,2,4",
@@ -612,6 +615,15 @@ def migrate_privacy_consent_version(database):
     )
 
 
+def migrate_appointment_contact_status(database):
+    """Add durable staff contact tracking to existing appointment records."""
+    columns = table_columns(database, "appointments")
+    if "contact_status" not in columns:
+        database.execute(
+            "ALTER TABLE appointments ADD COLUMN contact_status TEXT NOT NULL DEFAULT 'Not contacted'"
+        )
+
+
 def clinic_configuration():
     """Return validated scheduling settings, cached for the current request."""
     if "clinic_configuration" in g:
@@ -730,6 +742,10 @@ def init_db():
         if PRIVACY_CONSENT_MIGRATION not in completed:
             migrate_privacy_consent_version(database)
             record_migration(database, PRIVACY_CONSENT_MIGRATION)
+            completed.add(PRIVACY_CONSENT_MIGRATION)
+        if CONTACT_STATUS_MIGRATION not in completed:
+            migrate_appointment_contact_status(database)
+            record_migration(database, CONTACT_STATUS_MIGRATION)
     finally:
         if locked:
             database.execute("SELECT pg_advisory_unlock(83742619)")
@@ -2010,30 +2026,33 @@ def reject_request(request_id):
 @app.get("/admin/appointments")
 @roles_required("admin", "scheduler")
 def appointments():
+    client_section = request.args.get("section", "pending")
+    if client_section not in {"pending", "approved", "cancelled"}:
+        client_section = "pending"
     selected_date = request.args.get("date", "")
-    status = request.args.get("status", "")
     category_filter = request.args.get("category", "")
     search = request.args.get("search", "").strip()
     start_date = request.args.get("start_date", "")
     end_date = request.args.get("end_date", "")
     if category_filter not in VALID_CATEGORIES:
         category_filter = ""
-    query, params = "SELECT * FROM appointments WHERE 1=1", []
-    if selected_date:
-        query += " AND appointment_date=?"; params.append(selected_date)
-    if status:
-        query += " AND status=?"; params.append(status)
-    if category_filter:
-        query += " AND category=?"; params.append(category_filter)
-    if search:
-        query += " AND (LOWER(last_name || ' ' || first_name || ' ' || COALESCE(middle_initial, '')) LIKE ? OR contact_key LIKE ?)"
-        params.extend([f"%{search.lower()}%", f"%{normalize_contact(search)}%"])
-    if start_date:
-        query += " AND appointment_date>=?"; params.append(start_date)
-    if end_date:
-        query += " AND appointment_date<=?"; params.append(end_date)
-    query += " ORDER BY appointment_date DESC, appointment_time"
-    rows = db().execute(query, params).fetchall()
+    rows = []
+    section_status = {"approved": "Approved", "cancelled": "Cancelled"}.get(client_section)
+    if section_status:
+        query, params = "SELECT * FROM appointments WHERE status=?", [section_status]
+        if selected_date:
+            query += " AND appointment_date=?"; params.append(selected_date)
+        if category_filter:
+            query += " AND category=?"; params.append(category_filter)
+        if search:
+            query += " AND (LOWER(last_name || ' ' || first_name || ' ' || COALESCE(middle_initial, '')) LIKE ? OR contact_key LIKE ?)"
+            params.extend([f"%{search.lower()}%", f"%{normalize_contact(search)}%"])
+        if start_date:
+            query += " AND appointment_date>=?"; params.append(start_date)
+        if end_date:
+            query += " AND appointment_date<=?"; params.append(end_date)
+        query += " ORDER BY appointment_date ASC, appointment_time ASC, id ASC"
+        rows = db().execute(query, params).fetchall()
     waiting_requests = db().execute(
         """
         SELECT *
@@ -2051,12 +2070,22 @@ def appointments():
         LIMIT 50
         """
     ).fetchall()
+    section_counts = {
+        "pending": len(waiting_requests),
+        "approved": db().execute(
+            "SELECT COUNT(*) FROM appointments WHERE status='Approved'"
+        ).fetchone()[0],
+        "cancelled": db().execute(
+            "SELECT COUNT(*) FROM appointments WHERE status='Cancelled'"
+        ).fetchone()[0],
+    }
     return render_template(
         "appointments.html",
         appointments=rows,
         waiting_requests=waiting_requests,
+        client_section=client_section,
+        section_counts=section_counts,
         selected_date=selected_date,
-        selected_status=status,
         selected_category=category_filter,
         categories=["Regular", "PWD", "Senior Citizen", "Pregnant Woman"],
         search=search,
@@ -2065,6 +2094,47 @@ def appointments():
         rejected_requests=rejected_requests,
         today=clinic_today().isoformat(),
     )
+
+
+@app.post("/admin/appointments/<int:appointment_id>/contact-status")
+@roles_required("admin", "scheduler")
+def record_client_contact(appointment_id):
+    """Record the latest scheduling contact method without changing the appointment."""
+    contact_status = request.form.get("contact_status", "")
+    if contact_status not in VALID_CONTACT_STATUSES:
+        flash("Choose Texted or Called when recording client contact.", "error")
+        return redirect(url_for("appointments", section="approved"))
+
+    database = db()
+    appointment = database.execute(
+        "SELECT id, status, contact_status FROM appointments WHERE id=?", (appointment_id,)
+    ).fetchone()
+    if not appointment:
+        flash("Appointment not found.", "error")
+    elif appointment["status"] != "Approved":
+        flash("Contact tracking is available only for approved appointments.", "error")
+    elif appointment["contact_status"] == contact_status:
+        flash(f"This client is already marked as {contact_status.lower()}.", "success")
+    else:
+        database.execute(
+            "UPDATE appointments SET contact_status=?, updated_at=CURRENT_TIMESTAMP WHERE id=?",
+            (contact_status, appointment_id),
+        )
+        record_appointment_history(
+            appointment_id,
+            "Client contact recorded",
+            old_status=appointment["status"],
+            new_status=appointment["status"],
+            notes=f"Contact method: {contact_status}.",
+        )
+        audit(
+            "client_contact_recorded",
+            appointment_id=appointment_id,
+            details=f"method={contact_status}",
+        )
+        database.commit()
+        flash(f"Client marked as {contact_status.lower()}.", "success")
+    return redirect(url_for("appointments", section="approved"))
 
 
 @app.post("/admin/appointments/<int:appointment_id>/manage")
