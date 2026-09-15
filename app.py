@@ -72,7 +72,7 @@ PRIVACY_NOTICE_VERSION = "2026-09-13"
 CLINIC_DAYS = {0, 2, 4}  # Monday, Wednesday, Friday
 VALID_CATEGORIES = {"Regular", "PWD", "Senior Citizen", "Pregnant Woman"}
 VALID_GENDERS = {"Female", "Male", "Others"}
-VALID_CONTACT_STATUSES = {"Texted", "Called"}
+VALID_CONTACT_STATUSES = {"Texted"}
 BARANGAYS = [
     "Andal Alino (Pob.)",
     "Bagong Sikat",
@@ -1958,8 +1958,8 @@ def schedule_request(request_id):
                 INSERT INTO appointments (
                     last_name, first_name, middle_initial, birth_date, gender, barangay,
                     category, contact_number, contact_key, email, appointment_date,
-                    appointment_time, status
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Approved')
+                    appointment_time, status, called
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Approved', 1)
                 """,
                 (
                     fresh_request["last_name"],
@@ -1997,7 +1997,10 @@ def schedule_request(request_id):
                 new_status="Approved",
                 new_date=appointment_date,
                 new_time=appointment_time,
-                notes="Appointment created from the first-come-first-served queue.",
+                notes=(
+                    "Appointment created from the first-come-first-served queue. "
+                    "Called was recorded automatically when the appointment was approved."
+                ),
             )
             audit(
                 "client_scheduled",
@@ -2075,16 +2078,25 @@ def appointments():
         if search:
             query += " AND (LOWER(last_name || ' ' || first_name || ' ' || COALESCE(middle_initial, '')) LIKE ? OR contact_key LIKE ?)"
             params.extend([f"%{search.lower()}%", f"%{normalize_contact(search)}%"])
-        query += " ORDER BY appointment_date ASC, appointment_time ASC, id ASC"
+        query += " ORDER BY created_at DESC, id DESC"
         rows = db().execute(query, params).fetchall()
     waiting_requests = db().execute(
         """
         SELECT *
         FROM client_requests
         WHERE status='Waiting for schedule'
-        ORDER BY created_at ASC, id ASC
+        ORDER BY created_at DESC, id DESC
         """
     ).fetchall()
+    next_waiting_request = db().execute(
+        """
+        SELECT id
+        FROM client_requests
+        WHERE status='Waiting for schedule'
+        ORDER BY created_at ASC, id ASC
+        LIMIT 1
+        """
+    ).fetchone()
     rejected_requests = db().execute(
         """
         SELECT *
@@ -2107,6 +2119,7 @@ def appointments():
         "appointments.html",
         appointments=rows,
         waiting_requests=waiting_requests,
+        next_waiting_request_id=(next_waiting_request["id"] if next_waiting_request else None),
         client_section=client_section,
         section_counts=section_counts,
         selected_date=selected_date,
@@ -2124,10 +2137,10 @@ def record_client_contact(appointment_id):
     """Record Texted and Called separately, then reload the approved-client page."""
     contact_method = request.form.get("contact_status", "")
     if contact_method not in VALID_CONTACT_STATUSES:
-        flash("Choose Texted or Called when recording client contact.", "error")
+        flash("Choose Texted when recording client contact.", "error")
         return redirect(url_for("appointments", section="approved"))
 
-    method_column = {"Texted": "texted", "Called": "called"}[contact_method]
+    method_column = "texted"
     database = db()
     appointment = database.execute(
         f"SELECT id, status, {method_column} FROM appointments WHERE id=?", (appointment_id,)

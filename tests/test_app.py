@@ -146,7 +146,7 @@ class SchedulingSystemTests(unittest.TestCase):
         self.assertNotIn(b"Client, Finished", response.data)
         self.assertIn(b'<option value="PWD" selected>', response.data)
 
-    def test_approved_section_records_texted_or_called_client_contact(self):
+    def test_approved_section_records_texted_without_changing_auto_called(self):
         appointment_id = self.insert_appointment(
             self.next_monday(), "08:00", "Approved"
         )
@@ -160,14 +160,6 @@ class SchedulingSystemTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertIn(b"Client marked as texted.", response.data)
-        response = self.client.post(
-            f"/admin/appointments/{appointment_id}/contact-status",
-            data={"contact_status": "Called"},
-            follow_redirects=True,
-        )
-
-        self.assertEqual(response.status_code, 200)
-        self.assertIn(b"Client marked as called.", response.data)
         with scheduling_app.app.app_context():
             appointment = scheduling_app.db().execute(
                 "SELECT texted, called FROM appointments WHERE id=?", (appointment_id,)
@@ -177,9 +169,42 @@ class SchedulingSystemTests(unittest.TestCase):
                 (appointment_id,),
             ).fetchone()
         self.assertEqual(appointment["texted"], 1)
-        self.assertEqual(appointment["called"], 1)
+        self.assertEqual(appointment["called"], 0)
         self.assertEqual(history["action"], "Client contact recorded")
-        self.assertEqual(history["notes"], "Contact method: Called.")
+        self.assertEqual(history["notes"], "Contact method: Texted.")
+
+    def test_scheduling_a_client_automatically_marks_called(self):
+        appointment_date = self.next_monday()
+        with scheduling_app.app.app_context():
+            database = scheduling_app.db()
+            request_id = database.execute(
+                """
+                INSERT INTO client_requests (
+                    request_code, last_name, first_name, birth_date, gender, barangay,
+                    category, contact_number, contact_key, privacy_consent
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
+                """,
+                (
+                    "AUTO-CALLED", "Automatic", "Called", "1995-05-05", "Others",
+                    "Barangay One", "Regular", "09170000001", "09170000001",
+                ),
+            ).lastrowid
+            database.commit()
+        self.sign_in_as_scheduler()
+
+        response = self.client.post(
+            f"/admin/requests/{request_id}/schedule",
+            data={"appointment_date": appointment_date.isoformat(), "appointment_time": "08:00"},
+            follow_redirects=True,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b"Client schedule assigned successfully.", response.data)
+        with scheduling_app.app.app_context():
+            appointment = scheduling_app.db().execute(
+                "SELECT called FROM appointments WHERE first_name='Called'"
+            ).fetchone()
+        self.assertEqual(appointment["called"], 1)
 
     def test_contact_method_migration_preserves_existing_contact_records(self):
         appointment_id = self.insert_appointment(

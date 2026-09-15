@@ -34,28 +34,28 @@
         <div>
           <p class="eyebrow">PENDING REQUESTS</p>
           <h2>Waiting for schedule</h2>
-          <p class="notice">The first submitted client is first in line. Schedule or reject that request before moving to the next one.</p>
+          <p class="notice">Newest requests appear first. Scheduling priority still follows the original submission order.</p>
         </div>
         <span class="section-count">{{ section_counts.pending }} in queue</span>
       </div>
       {% if waiting_requests %}
         <table class="wide">
           <thead>
-            <tr><th>Queue</th><th>Client</th><th>Sector and address</th><th>Contact</th><th>Next action</th></tr>
+            <tr><th>Submitted</th><th>Client</th><th>Sector and address</th><th>Contact</th><th>Next action</th></tr>
           </thead>
           <tbody>
             {% for client_request in waiting_requests %}
               <tr>
-                <td><strong>#{{ loop.index }}</strong><br><span class="notice">{{ client_request.created_at }}</span></td>
+                <td><strong>{{ client_request.created_at }}</strong><br><span class="notice">{% if client_request.id == next_waiting_request_id %}Next to schedule{% else %}New request{% endif %}</span></td>
                 <td><strong>{{ client_request.last_name }}, {{ client_request.first_name }} {{ client_request.middle_initial }}</strong><br>{% if session.role == 'admin' %}{{ client_request.birth_date }} · {% endif %}{{ client_request.gender or 'Not recorded' }}</td>
                 <td><strong>{{ client_request.category }}</strong><br>{{ client_request.barangay }}</td>
                 <td>{{ client_request.contact_number }}{% if session.role == 'admin' and client_request.email %}<br>{{ client_request.email }}{% endif %}</td>
                 <td>
-                  {% if loop.first %}
+                  {% if client_request.id == next_waiting_request_id %}
                     <button class="small schedule-button" type="button" data-request-id="{{ client_request.id }}" data-client-name="{{ client_request.last_name }}, {{ client_request.first_name }} {{ client_request.middle_initial or '' }}">Schedule client</button>
                     <button class="small secondary-button reject-button" type="button" data-request-id="{{ client_request.id }}" data-client-name="{{ client_request.last_name }}, {{ client_request.first_name }} {{ client_request.middle_initial or '' }}">Reject request</button>
                   {% else %}
-                    <span class="notice">Waiting for earlier clients</span>
+                    <span class="notice">Earlier requests have priority</span>
                   {% endif %}
                 </td>
               </tr>
@@ -111,7 +111,7 @@
           <div>
             <p class="eyebrow">APPROVED APPOINTMENTS</p>
             <h2>Contact and appointment follow-up</h2>
-            <p class="notice">Record how the client was contacted. Use Manage for notes, rescheduling, cancellations, or marking a client served.</p>
+            <p class="notice">Called is recorded automatically when a schedule is approved. Use Texted after sending the appointment details. Manage handles notes, rescheduling, cancellations, and marking a client served.</p>
           </div>
           <span class="section-count">{{ section_counts.approved }} approved</span>
         </div>
@@ -129,7 +129,7 @@
                     <span class="badge approved">Approved</span><br>
                     <span class="contact-status" aria-label="Client contact status">
                       <span class="contact-state {% if appointment.texted %}recorded{% endif %}">Texted: {% if appointment.texted %}Recorded{% else %}Not yet{% endif %}</span>
-                      <span class="contact-state {% if appointment.called %}recorded{% endif %}">Called: {% if appointment.called %}Recorded{% else %}Not yet{% endif %}</span>
+                      <span class="contact-state {% if appointment.called %}recorded{% endif %}">Called: {% if appointment.called %}Recorded automatically{% else %}Not yet{% endif %}</span>
                     </span>
                   </td>
                   <td>
@@ -137,10 +137,6 @@
                       <form method="post" action="{{ url_for('record_client_contact', appointment_id=appointment.id) }}">
                         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                         <button class="small secondary-button" type="submit" name="contact_status" value="Texted" {% if appointment.texted %}disabled{% endif %}>Texted</button>
-                      </form>
-                      <form method="post" action="{{ url_for('record_client_contact', appointment_id=appointment.id) }}">
-                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                        <button class="small secondary-button" type="submit" name="contact_status" value="Called" {% if appointment.called %}disabled{% endif %}>Called</button>
                       </form>
                       <button class="small manage-button" type="button" data-appointment-id="{{ appointment.id }}" data-client-name="{{ appointment.last_name }}, {{ appointment.first_name }} {{ appointment.middle_initial or '' }}" data-status="{{ appointment.status }}" data-date="{{ appointment.appointment_date }}" data-time="{{ appointment.appointment_time }}" data-notes="{{ appointment.staff_notes or '' }}">Manage</button>
                       <button class="small secondary-button history-button" type="button" data-appointment-id="{{ appointment.id }}" data-client-name="{{ appointment.last_name }}, {{ appointment.first_name }} {{ appointment.middle_initial or '' }}">History</button>
