@@ -127,13 +127,13 @@
                   <td>{{ appointment.contact_number }}{% if session.role == 'admin' and appointment.email %}<br>{{ appointment.email }}{% endif %}</td>
                   <td>
                     <span class="badge approved">Approved</span><br>
-                    <button class="small secondary-button" type="submit" name="contact_status" value="Texted" {% if appointment.contact_status == 'Texted' %}disabled{% endif %}>Texted</button>
+                    <span class="contact-status">{{ appointment.contact_status }}</span>
                   </td>
                   <td>
                     <div class="inline-actions">
                       <form method="post" action="{{ url_for('record_client_contact', appointment_id=appointment.id) }}">
                         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                        <button class="small secondary-button" type="submit" name="contact_status" value="Texted" {% if appointment.contact_status == 'Texted' %}disabled{% endif %}>Texted</button>
+                        <button class="small secondary-button" type="submit" name="contact_status" value="Called" {% if 'Called' in appointment.contact_status %}disabled{% endif %}>Called</button>
                       </form>
                       <form method="post" action="{{ url_for('record_client_contact', appointment_id=appointment.id) }}">
                         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
