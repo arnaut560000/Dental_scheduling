@@ -72,7 +72,7 @@ PRIVACY_NOTICE_VERSION = "2026-09-13"
 CLINIC_DAYS = {0, 2, 4}  # Monday, Wednesday, Friday
 VALID_CATEGORIES = {"Regular", "PWD", "Senior Citizen", "Pregnant Woman"}
 VALID_GENDERS = {"Female", "Male", "Others"}
-VALID_REGISTRATION_MODES = {"Email", "Form", "Text"}
+VALID_REGISTRATION_MODES = {"Email", "Form", "Online", "Text"}
 BARANGAYS = [
     "Andal Alino (Pob.)",
     "Bagong Sikat",
@@ -1982,7 +1982,7 @@ def schedule_request(request_id):
                     last_name, first_name, middle_initial, birth_date, gender, barangay,
                     category, contact_number, contact_key, email, appointment_date,
                     appointment_time, registration_mode, status, called
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Form', 'Approved', 1)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Online', 'Approved', 1)
                 """,
                 (
                     fresh_request["last_name"],
@@ -2021,7 +2021,8 @@ def schedule_request(request_id):
                 new_date=appointment_date,
                 new_time=appointment_time,
                 notes=(
-                    "Appointment created from the first-come-first-served queue. "
+                    "Appointment created from an online first-come-first-served queue. "
+                    "Mode of registration: Online. "
                     "Called was recorded when the appointment was approved."
                 ),
             )
@@ -2236,15 +2237,22 @@ def appointments():
         LIMIT 1
         """
     ).fetchone()
-    rejected_requests = db().execute(
-        """
-        SELECT *
-        FROM client_requests
-        WHERE status='Rejected'
-        ORDER BY created_at DESC, id DESC
-        LIMIT 50
-        """
-    ).fetchall()
+    rejected_requests = []
+    rejected_request_count = db().execute(
+        "SELECT COUNT(*) FROM client_requests WHERE status='Rejected'"
+    ).fetchone()[0]
+    if client_section == "cancelled":
+        rejected_query = "SELECT * FROM client_requests WHERE status='Rejected'"
+        rejected_params = []
+        if selected_date:
+            rejected_query += " AND date(created_at)=?"; rejected_params.append(selected_date)
+        if category_filter:
+            rejected_query += " AND category=?"; rejected_params.append(category_filter)
+        if search:
+            rejected_query += " AND (LOWER(last_name || ' ' || first_name || ' ' || COALESCE(middle_initial, '')) LIKE ? OR contact_key LIKE ?)"
+            rejected_params.extend([f"%{search.lower()}%", f"%{normalize_contact(search)}%"])
+        rejected_query += " ORDER BY created_at DESC, id DESC LIMIT 100"
+        rejected_requests = db().execute(rejected_query, rejected_params).fetchall()
     section_counts = {
         "pending": len(waiting_requests),
         "approved": db().execute(
@@ -2252,7 +2260,7 @@ def appointments():
         ).fetchone()[0],
         "cancelled": db().execute(
             "SELECT COUNT(*) FROM appointments WHERE status='Cancelled'"
-        ).fetchone()[0],
+        ).fetchone()[0] + rejected_request_count,
     }
     return render_template(
         "appointments.html",
@@ -2267,6 +2275,7 @@ def appointments():
         barangays=BARANGAYS,
         search=search,
         rejected_requests=rejected_requests,
+        rejected_request_count=rejected_request_count,
         today=clinic_today().isoformat(),
     )
 

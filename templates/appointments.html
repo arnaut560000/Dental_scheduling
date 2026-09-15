@@ -25,7 +25,7 @@
     </a>
     <a class="client-section-tab {% if client_section == 'cancelled' %}active{% endif %}" href="{{ url_for('appointments', section='cancelled') }}">
       <span>Cancelled</span>
-      <strong>No response or cancelled</strong>
+      <strong>Cancelled or rejected</strong>
       <b>{{ section_counts.cancelled }}</b>
     </a>
   </nav>
@@ -68,25 +68,6 @@
         <p class="empty">No clients are waiting for a schedule.</p>
       {% endif %}
     </section>
-
-    {% if rejected_requests %}
-      <section class="card table-card section-follow-up">
-        <h2>Recently rejected requests</h2>
-        <p class="notice">These requests were not added to the appointment schedule.</p>
-        <table class="wide">
-          <thead><tr><th>Submitted</th><th>Client</th><th>Reason</th></tr></thead>
-          <tbody>
-            {% for client_request in rejected_requests %}
-              <tr>
-                <td>{{ client_request.created_at }}</td>
-                <td><strong>{{ client_request.last_name }}, {{ client_request.first_name }}</strong><br>{{ client_request.contact_number }}</td>
-                <td>{{ client_request.status_reason }}</td>
-              </tr>
-            {% endfor %}
-          </tbody>
-        </table>
-      </section>
-    {% endif %}
   {% else %}
     <form class="filters card client-record-filters" method="get">
       <input type="hidden" name="section" value="{{ client_section }}">
@@ -159,8 +140,8 @@
         <div class="section-summary">
           <div>
             <p class="eyebrow">CANCELLED APPOINTMENTS</p>
-            <h2>No-response and cancelled clients</h2>
-            <p class="notice">Use this section for clients who did not respond on their scheduled day or whose appointment had to be cancelled. The reason stays in their history.</p>
+            <h2>Cancelled and rejected records</h2>
+            <p class="notice">This keeps both cancelled appointments and rejected online requests in one permanent staff record.</p>
           </div>
           <span class="section-count">{{ section_counts.cancelled }} cancelled</span>
         </div>
@@ -186,6 +167,35 @@
         {% else %}
           <p class="empty">No cancelled clients match this search.</p>
         {% endif %}
+
+        <section class="section-follow-up">
+          <div class="section-summary">
+            <div>
+              <p class="eyebrow">REJECTED ONLINE REQUESTS</p>
+              <h2>Rejected requests</h2>
+              <p class="notice">These clients were not given an appointment. Their submitted details and rejection reason remain recorded here.</p>
+            </div>
+            <span class="section-count">{{ rejected_request_count }} rejected</span>
+          </div>
+          {% if rejected_requests %}
+            <table class="wide">
+              <thead><tr><th>Submitted</th><th>Client</th><th>Sector and address</th><th>Contact</th><th>Rejection reason</th></tr></thead>
+              <tbody>
+                {% for client_request in rejected_requests %}
+                  <tr>
+                    <td>{{ client_request.created_at }}</td>
+                    <td><strong>{{ client_request.last_name }}, {{ client_request.first_name }} {{ client_request.middle_initial or '' }}</strong><br>{% if session.role == 'admin' %}{{ client_request.birth_date }} · {% endif %}{{ client_request.gender or 'Not recorded' }}</td>
+                    <td><strong>{{ client_request.category }}</strong><br>{{ client_request.barangay }}</td>
+                    <td>{{ client_request.contact_number }}{% if session.role == 'admin' and client_request.email %}<br>{{ client_request.email }}{% endif %}</td>
+                    <td><span class="badge cancelled">Rejected</span><br><span class="notice">{{ client_request.status_reason or 'No reason recorded.' }}</span></td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          {% else %}
+            <p class="empty">No rejected online requests match this search.</p>
+          {% endif %}
+        </section>
       {% endif %}
     </section>
   {% endif %}

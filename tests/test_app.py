@@ -204,7 +204,43 @@ class SchedulingSystemTests(unittest.TestCase):
                 "SELECT called, registration_mode FROM appointments WHERE first_name='Called'"
             ).fetchone()
         self.assertEqual(appointment["called"], 1)
-        self.assertEqual(appointment["registration_mode"], "Form")
+        self.assertEqual(appointment["registration_mode"], "Online")
+
+    def test_rejected_online_request_is_kept_in_cancelled_records(self):
+        with scheduling_app.app.app_context():
+            database = scheduling_app.db()
+            request_id = database.execute(
+                """
+                INSERT INTO client_requests (
+                    request_code, last_name, first_name, birth_date, gender, barangay,
+                    category, contact_number, contact_key, privacy_consent
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
+                """,
+                (
+                    "REJECTED-RECORD", "Rejected", "Online", "1995-05-05", "Others",
+                    scheduling_app.BARANGAYS[0], "Regular", "09170000008", "09170000008",
+                ),
+            ).lastrowid
+            database.commit()
+        self.sign_in_as_scheduler()
+
+        response = self.client.post(
+            f"/admin/requests/{request_id}/reject",
+            data={"reason": "No appointment slots are available today."},
+            follow_redirects=True,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        with scheduling_app.app.app_context():
+            request_row = scheduling_app.db().execute(
+                "SELECT status, status_reason FROM client_requests WHERE id=?", (request_id,)
+            ).fetchone()
+        self.assertEqual(request_row["status"], "Rejected")
+        self.assertEqual(request_row["status_reason"], "No appointment slots are available today.")
+
+        cancelled_page = self.client.get("/admin/appointments?section=cancelled")
+        self.assertIn(b"Rejected, Online", cancelled_page.data)
+        self.assertIn(b"No appointment slots are available today.", cancelled_page.data)
 
     def test_staff_can_add_an_approved_client_with_registration_mode(self):
         appointment_date = self.next_monday()
