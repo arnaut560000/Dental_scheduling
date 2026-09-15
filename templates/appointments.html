@@ -36,7 +36,7 @@
         <div>
           <p class="eyebrow">PENDING REQUESTS</p>
           <h2>Waiting for schedule</h2>
-          <p class="notice">Priority order: Senior Citizen, PWD, Pregnant Woman, then Regular. Earlier requests appear first within each group.</p>
+          <p class="notice">Requests are listed by submission time, with the earliest request at the top.</p>
         </div>
         <span class="section-count">{{ section_counts.pending }} in queue</span>
       </div>
@@ -48,7 +48,7 @@
           <tbody>
             {% for client_request in waiting_requests %}
               <tr>
-                <td><strong>{{ client_request.created_at }}</strong><br><span class="notice">{% if client_request.category in ['Senior Citizen', 'PWD', 'Pregnant Woman'] %}Priority client{% else %}Waiting in queue{% endif %}</span></td>
+                <td><strong>{{ client_request.created_at }}</strong><br><span class="notice">Waiting in queue</span></td>
                 <td><strong>{{ client_request.last_name }}, {{ client_request.first_name }} {{ client_request.middle_initial }}</strong><br>{% if session.role == 'admin' %}{{ client_request.birth_date }} · {% endif %}{{ client_request.gender or 'Not recorded' }}</td>
                 <td><strong>{{ client_request.category }}</strong><br>{{ client_request.barangay }}</td>
                 <td>{{ client_request.contact_number }}{% if session.role == 'admin' and client_request.email %}<br>{{ client_request.email }}{% endif %}</td>
@@ -93,7 +93,7 @@
           <div>
             <p class="eyebrow">APPROVED APPOINTMENTS</p>
             <h2>Approved appointments</h2>
-            <p class="notice">Click Texted after sending the appointment details. Use Manage for staff-only notes or rescheduling.</p>
+            <p class="notice">Click Texted after sending the appointment details. Use Reschedule only when the appointment date or time must change.</p>
           </div>
           <span class="section-count">{{ section_counts.approved }} approved</span>
         </div>
@@ -121,7 +121,7 @@
                         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                         <button class="small secondary-button" type="submit" {% if appointment.texted %}disabled{% endif %}>Texted</button>
                       </form>
-                      <button class="small manage-button" type="button" data-appointment-id="{{ appointment.id }}" data-client-name="{{ appointment.last_name }}, {{ appointment.first_name }} {{ appointment.middle_initial or '' }}" data-status="{{ appointment.status }}" data-date="{{ appointment.appointment_date }}" data-time="{{ appointment.appointment_time }}" data-notes="{{ appointment.staff_notes or '' }}">Manage</button>
+                      <button class="small secondary-button reschedule-button" type="button" data-open-reschedule="true" data-appointment-id="{{ appointment.id }}" data-client-name="{{ appointment.last_name }}, {{ appointment.first_name }} {{ appointment.middle_initial or '' }}" data-status="{{ appointment.status }}" data-date="{{ appointment.appointment_date }}" data-time="{{ appointment.appointment_time }}">Reschedule</button>
                       <button class="small secondary-button history-button" type="button" data-appointment-id="{{ appointment.id }}" data-client-name="{{ appointment.last_name }}, {{ appointment.first_name }} {{ appointment.middle_initial or '' }}">History</button>
                     </div>
                   </td>
@@ -153,7 +153,6 @@
                   <td>{{ appointment.contact_number }}{% if session.role == 'admin' and appointment.email %}<br>{{ appointment.email }}{% endif %}</td>
                   <td><span class="badge cancelled">Cancelled</span><br><span class="notice">{{ appointment.status_reason or 'No response was recorded for the scheduled day.' }}</span></td>
                   <td>
-                    <button class="small manage-button" type="button" data-appointment-id="{{ appointment.id }}" data-client-name="{{ appointment.last_name }}, {{ appointment.first_name }} {{ appointment.middle_initial or '' }}" data-status="{{ appointment.status }}" data-date="{{ appointment.appointment_date }}" data-time="{{ appointment.appointment_time }}" data-notes="{{ appointment.staff_notes or '' }}">Notes</button>
                     <button class="small secondary-button history-button" type="button" data-appointment-id="{{ appointment.id }}" data-client-name="{{ appointment.last_name }}, {{ appointment.first_name }} {{ appointment.middle_initial or '' }}">History</button>
                   </td>
                 </tr>
@@ -209,7 +208,12 @@
     <form id="schedule-form" method="post" class="appointment-form">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <div class="form-grid">
-        <label>Appointment date<input id="schedule-date" type="date" name="appointment_date" min="{{ today }}" required></label>
+        <label>Appointment date
+          <select id="schedule-date" name="appointment_date" required>
+            <option value="">Choose a clinic date</option>
+            {% for clinic_date in clinic_dates %}<option value="{{ clinic_date.value }}">{{ clinic_date.label }}</option>{% endfor %}
+          </select>
+        </label>
         <label>
           Available time
           <select id="schedule-time" name="appointment_time" required disabled><option value="">Choose a date first</option></select>
@@ -239,24 +243,24 @@
   <dialog id="manage-modal" aria-labelledby="manage-heading">
     <div class="modal-header">
       <div>
-        <p class="eyebrow">STAFF NOTES</p>
-        <h2 id="manage-heading">Manage appointment notes</h2>
+        <p class="eyebrow">APPOINTMENT SCHEDULE</p>
+        <h2 id="manage-heading">Reschedule appointment</h2>
         <p id="manage-client" class="notice"></p>
       </div>
       <button class="close-modal" id="manage-close" type="button" aria-label="Close">×</button>
     </div>
     <form id="manage-form" method="post" class="appointment-form">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      <input id="manage-action" type="hidden" name="action" value="notes">
-      <label>Staff-only notes<textarea id="manage-notes" name="staff_notes" maxlength="2000" placeholder="Internal notes: not visible to clients"></textarea></label>
-      <div class="inline-actions">
-        <button type="submit" data-manage-action="notes">Save notes</button>
-        <button class="secondary-button" id="manage-reschedule-toggle" type="button">Reschedule appointment</button>
-      </div>
-      <div id="manage-reschedule-fields" class="form-grid" hidden>
-        <label>New appointment date<input id="manage-date" type="date" name="appointment_date" min="{{ today }}"></label>
+      <input id="manage-action" type="hidden" name="action" value="reschedule">
+      <div id="manage-reschedule-fields" class="form-grid">
+        <label>New appointment date
+          <select id="manage-date" name="appointment_date">
+            <option value="">Choose a clinic date</option>
+            {% for clinic_date in clinic_dates %}<option value="{{ clinic_date.value }}">{{ clinic_date.label }}</option>{% endfor %}
+          </select>
+        </label>
         <label>New available time<select id="manage-time" name="appointment_time" disabled><option value="">Choose a date first</option></select></label>
-        <div class="form-grid-full"><button type="submit" data-manage-action="reschedule">Save new schedule</button></div>
+        <div class="form-grid-full"><button type="submit">Save new schedule</button></div>
       </div>
       <p id="manage-help" class="notice"></p>
     </form>
@@ -308,7 +312,12 @@
             <option value="Text">Text</option>
           </select>
         </label>
-        <label>Appointment date<input id="add-client-date" name="appointment_date" type="date" min="{{ today }}" required></label>
+        <label>Appointment date
+          <select id="add-client-date" name="appointment_date" required>
+            <option value="">Choose a clinic date</option>
+            {% for clinic_date in clinic_dates %}<option value="{{ clinic_date.value }}">{{ clinic_date.label }}</option>{% endfor %}
+          </select>
+        </label>
         <label>Available time<select id="add-client-time" name="appointment_time" required disabled><option value="">Choose a date first</option></select></label>
       </div>
       <p id="add-client-help" class="notice">Choose an available future clinic date.</p>
@@ -341,9 +350,8 @@
       const rejectForm = document.getElementById('reject-form');
       const manageModal = document.getElementById('manage-modal');
       const manageForm = document.getElementById('manage-form');
+      const manageHeading = document.getElementById('manage-heading');
       const manageAction = document.getElementById('manage-action');
-      const manageNotes = document.getElementById('manage-notes');
-      const manageRescheduleToggle = document.getElementById('manage-reschedule-toggle');
       const manageRescheduleFields = document.getElementById('manage-reschedule-fields');
       const manageDate = document.getElementById('manage-date');
       const manageTime = document.getElementById('manage-time');
@@ -505,40 +513,25 @@
       document.getElementById('reject-close').addEventListener('click', function () { rejectModal.close(); });
 
       function bindManageButtons() {
-        document.querySelectorAll('.manage-button:not([data-live-bound])').forEach(function (button) {
+        document.querySelectorAll('.reschedule-button:not([data-live-bound])').forEach(function (button) {
           button.dataset.liveBound = 'true';
           button.addEventListener('click', function () {
           currentAppointment = button.dataset;
           manageForm.action = `/admin/appointments/${currentAppointment.appointmentId}/manage`;
           document.getElementById('manage-client').textContent = `${currentAppointment.clientName.trim()} · ${currentAppointment.date} ${formatTime(currentAppointment.time)}`;
-          manageNotes.value = currentAppointment.notes || '';
-          manageAction.value = 'notes';
-          manageRescheduleFields.hidden = true;
+          manageAction.value = 'reschedule';
+          manageHeading.textContent = 'Reschedule appointment';
+          manageRescheduleFields.hidden = false;
           manageDate.value = '';
           manageTime.disabled = true;
           manageTime.innerHTML = '<option value="">Choose a date first</option>';
-          manageHelp.textContent = '';
-          manageRescheduleToggle.hidden = !['Pending', 'Approved'].includes(currentAppointment.status);
+          manageHelp.textContent = 'Choose a new available clinic date and time.';
           manageModal.showModal();
+          manageDate.focus();
         });
         });
       }
-      manageRescheduleToggle.addEventListener('click', function () {
-        manageRescheduleFields.hidden = !manageRescheduleFields.hidden;
-        if (!manageRescheduleFields.hidden) {
-          manageHelp.textContent = 'Choose a new available clinic date and time.';
-          manageDate.focus();
-        } else {
-          manageDate.value = '';
-          manageTime.disabled = true;
-          manageTime.innerHTML = '<option value="">Choose a date first</option>';
-          manageHelp.textContent = '';
-        }
-      });
       manageDate.addEventListener('change', function () { populateTimes(manageDate, manageTime, manageHelp); });
-      manageForm.addEventListener('submit', function (event) {
-        manageAction.value = (event.submitter && event.submitter.dataset.manageAction) || 'notes';
-      });
       document.getElementById('manage-close').addEventListener('click', function () { manageModal.close(); });
 
       function bindAddClientButton() {
@@ -573,9 +566,11 @@
             }
             list.innerHTML = data.history.map(function (item) {
               const schedule = item.new_date ? `${escapeHtml(item.new_date)} ${escapeHtml(item.new_time || '')}` : '';
+              const recordedLabel = item.action === 'Scheduled' ? 'Approved' : 'Recorded';
               return '<article class="history-item">' +
                 `<strong>${escapeHtml(item.action)}</strong><br>` +
-                `<span>${escapeHtml(item.created_at)} · ${escapeHtml(item.staff_name)}</span>` +
+                `<span>${recordedLabel}: ${escapeHtml(item.created_at)} · ${escapeHtml(item.staff_name)}</span>` +
+                (item.request_submitted_at ? `<p>Request submitted: ${escapeHtml(item.request_submitted_at)}</p>` : '') +
                 (schedule ? `<p>Schedule: ${schedule}</p>` : '') +
                 (item.reason ? `<p>Reason: ${escapeHtml(item.reason)}</p>` : '') +
                 (item.notes ? `<p>Notes: ${escapeHtml(item.notes)}</p>` : '') +

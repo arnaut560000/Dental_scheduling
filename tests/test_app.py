@@ -209,11 +209,20 @@ class SchedulingSystemTests(unittest.TestCase):
                     "SELECT action FROM appointment_history WHERE appointment_id=(SELECT id FROM appointments WHERE first_name='Called') ORDER BY id"
                 ).fetchall()
             ]
+            request_time = scheduling_app.db().execute(
+                """
+                SELECT request_submitted_at
+                FROM appointment_history
+                WHERE appointment_id=(SELECT id FROM appointments WHERE first_name='Called')
+                  AND action='Scheduled'
+                """
+            ).fetchone()["request_submitted_at"]
         self.assertEqual(appointment["called"], 1)
         self.assertEqual(appointment["registration_mode"], "Online")
         self.assertEqual(history_actions, ["Scheduled", "Called"])
+        self.assertIsNotNone(request_time)
 
-    def test_priority_clients_are_first_and_every_pending_client_can_be_scheduled(self):
+    def test_pending_clients_keep_submission_order_and_every_client_can_be_scheduled(self):
         appointment_date = self.next_monday()
         with scheduling_app.app.app_context():
             database = scheduling_app.db()
@@ -238,8 +247,8 @@ class SchedulingSystemTests(unittest.TestCase):
         self.sign_in_as_scheduler()
 
         page = self.client.get("/admin/appointments?section=pending")
+        self.assertLess(page.data.find(b"Regular, Client"), page.data.find(b"Senior, Client"))
         self.assertLess(page.data.find(b"Senior, Client"), page.data.find(b"Pwd, Client"))
-        self.assertLess(page.data.find(b"Pwd, Client"), page.data.find(b"Regular, Client"))
 
         response = self.client.post(
             f"/admin/requests/{senior_id}/schedule",
@@ -247,6 +256,32 @@ class SchedulingSystemTests(unittest.TestCase):
             follow_redirects=True,
         )
         self.assertIn(b"Client schedule assigned successfully.", response.data)
+
+    def test_staff_date_controls_only_offer_open_configured_clinic_days(self):
+        blocked_date = self.next_monday().isoformat()
+        with scheduling_app.app.app_context():
+            scheduling_app.db().execute(
+                "INSERT INTO blocked_dates (blocked_date, reason) VALUES (?, ?)",
+                (blocked_date, "Clinic holiday"),
+            )
+            scheduling_app.db().commit()
+        self.insert_appointment(
+            self.next_monday() + timedelta(days=2), "08:00", "Approved"
+        )
+        self.sign_in_as_scheduler()
+
+        page = self.client.get("/admin/appointments?section=approved")
+        self.assertNotIn(blocked_date.encode(), page.data)
+        self.assertIn(b"Choose a clinic date", page.data)
+        self.assertIn(b">Reschedule</button>", page.data)
+        self.assertNotIn(b">Manage</button>", page.data)
+        with scheduling_app.app.test_request_context("/admin/appointments"):
+            dates = scheduling_app.selectable_clinic_dates()
+        self.assertTrue(dates)
+        self.assertTrue(all(
+            date.fromisoformat(item["value"]).weekday() in {0, 2, 4}
+            for item in dates
+        ))
 
     def test_rescheduling_needs_no_reason_and_keeps_notes_available(self):
         appointment_date = self.next_monday()
@@ -589,6 +624,7 @@ class SchedulingSystemTests(unittest.TestCase):
         self.assertIn(scheduling_app.CONTACT_STATUS_MIGRATION, versions)
         self.assertIn(scheduling_app.CONTACT_METHOD_FLAGS_MIGRATION, versions)
         self.assertIn(scheduling_app.REGISTRATION_MODE_MIGRATION, versions)
+        self.assertIn(scheduling_app.REQUEST_SUBMITTED_HISTORY_MIGRATION, versions)
 
         with scheduling_app.app.app_context():
             appointment_columns = scheduling_app.table_columns(
@@ -598,6 +634,12 @@ class SchedulingSystemTests(unittest.TestCase):
         self.assertIn("texted", appointment_columns)
         self.assertIn("called", appointment_columns)
         self.assertIn("registration_mode", appointment_columns)
+
+        with scheduling_app.app.app_context():
+            history_columns = scheduling_app.table_columns(
+                scheduling_app.db(), "appointment_history"
+            )
+        self.assertIn("request_submitted_at", history_columns)
 
         with scheduling_app.app.app_context():
             settings = {

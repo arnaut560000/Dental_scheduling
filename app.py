@@ -280,7 +280,7 @@ def create_postgres_schema(database):
             id BIGSERIAL PRIMARY KEY, appointment_id BIGINT NOT NULL, user_id BIGINT,
             action TEXT NOT NULL, old_status TEXT, new_status TEXT,
             old_date TEXT, old_time TEXT, new_date TEXT, new_time TEXT,
-            reason TEXT, notes TEXT,
+            reason TEXT, notes TEXT, request_submitted_at TEXT,
             created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
         )
         """,
@@ -390,6 +390,7 @@ def apply_initial_schema(database):
             new_time TEXT,
             reason TEXT,
             notes TEXT,
+            request_submitted_at TEXT,
             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
         );
         CREATE INDEX IF NOT EXISTS idx_appointment_history_appointment
@@ -472,6 +473,7 @@ PRIVACY_CONSENT_MIGRATION = "004_privacy_consent_version"
 CONTACT_STATUS_MIGRATION = "005_appointment_contact_status"
 CONTACT_METHOD_FLAGS_MIGRATION = "006_appointment_contact_method_flags"
 REGISTRATION_MODE_MIGRATION = "007_appointment_registration_mode"
+REQUEST_SUBMITTED_HISTORY_MIGRATION = "008_appointment_request_submitted_history"
 
 DEFAULT_CLINIC_SETTINGS = {
     "clinic_days": "0,2,4",
@@ -669,6 +671,26 @@ def migrate_appointment_registration_mode(database):
     )
 
 
+def migrate_appointment_request_submitted_history(database):
+    """Keep the original online request time alongside later staff actions."""
+    columns = table_columns(database, "appointment_history")
+    if "request_submitted_at" not in columns:
+        database.execute(
+            "ALTER TABLE appointment_history ADD COLUMN request_submitted_at TEXT"
+        )
+    database.execute(
+        """
+        UPDATE appointment_history
+        SET request_submitted_at=(
+            SELECT created_at
+            FROM client_requests
+            WHERE client_requests.scheduled_appointment_id=appointment_history.appointment_id
+        )
+        WHERE request_submitted_at IS NULL
+        """
+    )
+
+
 def clinic_configuration():
     """Return validated scheduling settings, cached for the current request."""
     if "clinic_configuration" in g:
@@ -799,6 +821,10 @@ def init_db():
         if REGISTRATION_MODE_MIGRATION not in completed:
             migrate_appointment_registration_mode(database)
             record_migration(database, REGISTRATION_MODE_MIGRATION)
+            completed.add(REGISTRATION_MODE_MIGRATION)
+        if REQUEST_SUBMITTED_HISTORY_MIGRATION not in completed:
+            migrate_appointment_request_submitted_history(database)
+            record_migration(database, REQUEST_SUBMITTED_HISTORY_MIGRATION)
     finally:
         if locked:
             database.execute("SELECT pg_advisory_unlock(83742619)")
@@ -886,14 +912,16 @@ def record_appointment_history(
     new_time=None,
     reason=None,
     notes=None,
+    request_submitted_at=None,
 ):
     """Keep a permanent, staff-attributed history for appointment changes."""
     db().execute(
         """
         INSERT INTO appointment_history (
             appointment_id, user_id, action, old_status, new_status,
-            old_date, old_time, new_date, new_time, reason, notes
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            old_date, old_time, new_date, new_time, reason, notes,
+            request_submitted_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             appointment_id,
@@ -907,6 +935,7 @@ def record_appointment_history(
             new_time,
             reason,
             notes,
+            request_submitted_at,
         ),
     )
 
@@ -1258,6 +1287,35 @@ def valid_clinic_date(value):
         )
     except (TypeError, ValueError):
         return False
+
+
+def selectable_clinic_dates(days_ahead=366):
+    """Return future, open clinic dates for staff scheduling controls.
+
+    A native HTML date input cannot disable individual weekdays. Supplying a
+    select list means staff can only choose configured clinic days (Monday,
+    Wednesday, and Friday by default) and skips administrator-blocked dates.
+    """
+    configuration = clinic_configuration()
+    start = clinic_today()
+    end = start + timedelta(days=days_ahead)
+    blocked_dates = {
+        row["blocked_date"]
+        for row in db().execute(
+            "SELECT blocked_date FROM blocked_dates WHERE blocked_date BETWEEN ? AND ?",
+            (start.isoformat(), end.isoformat()),
+        ).fetchall()
+    }
+    return [
+        {
+            "value": candidate.isoformat(),
+            "label": candidate.strftime("%A, %d %B %Y"),
+        }
+        for offset in range(days_ahead + 1)
+        for candidate in [start + timedelta(days=offset)]
+        if candidate.weekday() in configuration["days"]
+        and candidate.isoformat() not in blocked_dates
+    ]
 
 
 def valid_birth_date(value):
@@ -1986,9 +2044,10 @@ def schedule_request(request_id):
                 new_date=appointment_date,
                 new_time=appointment_time,
                 notes=(
-                    "Appointment created from the online priority queue. "
+                    "Appointment created from the online request queue. "
                     "Mode of registration: Online."
                 ),
+                request_submitted_at=str(fresh_request["created_at"]),
             )
             record_appointment_history(
                 appointment_id,
@@ -2188,15 +2247,7 @@ def appointments():
         SELECT *
         FROM client_requests
         WHERE status='Waiting for schedule'
-        ORDER BY
-            CASE category
-                WHEN 'Senior Citizen' THEN 1
-                WHEN 'PWD' THEN 2
-                WHEN 'Pregnant Woman' THEN 3
-                ELSE 4
-            END,
-            created_at ASC,
-            id ASC
+        ORDER BY created_at ASC, id ASC
         """
     ).fetchall()
     rejected_requests = []
@@ -2238,6 +2289,7 @@ def appointments():
         rejected_requests=rejected_requests,
         rejected_request_count=rejected_request_count,
         today=clinic_today().isoformat(),
+        clinic_dates=selectable_clinic_dates(),
     )
 
 
@@ -2461,6 +2513,7 @@ def appointment_history(appointment_id):
                 "new_time": row["new_time"],
                 "reason": row["reason"],
                 "notes": row["notes"],
+                "request_submitted_at": row["request_submitted_at"],
                 "created_at": row["created_at"],
             }
             for row in rows
