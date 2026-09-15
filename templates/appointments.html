@@ -10,6 +10,8 @@
     </div>
   </div>
 
+  <p id="client-live-message" class="live-message" role="status" aria-live="polite" hidden></p>
+  <div id="client-management-content">
   <nav class="client-section-tabs" aria-label="Client management sections">
     <a class="client-section-tab {% if client_section == 'pending' %}active{% endif %}" href="{{ url_for('appointments', section='pending') }}">
       <span>Pending</span>
@@ -86,7 +88,7 @@
       </section>
     {% endif %}
   {% else %}
-    <form class="filters card" method="get">
+    <form class="filters card client-record-filters" method="get">
       <input type="hidden" name="section" value="{{ client_section }}">
       <label>Search client or phone<input type="search" name="search" value="{{ search }}" placeholder="Name or 11-digit phone"></label>
       <label>Date<input type="date" name="date" value="{{ selected_date }}"></label>
@@ -134,7 +136,7 @@
                   </td>
                   <td>
                     <div class="inline-actions">
-                      <form method="post" action="{{ url_for('record_client_contact', appointment_id=appointment.id) }}">
+                      <form class="contact-status-form" method="post" action="{{ url_for('record_client_contact', appointment_id=appointment.id) }}">
                         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                         <button class="small secondary-button" type="submit" name="contact_status" value="Texted" {% if appointment.texted %}disabled{% endif %}>Texted</button>
                       </form>
@@ -183,6 +185,7 @@
       {% endif %}
     </section>
   {% endif %}
+  </div>
 
   <dialog id="schedule-modal" aria-labelledby="schedule-heading">
     <div class="modal-header">
@@ -291,7 +294,12 @@
       const manageNotes = document.getElementById('manage-notes');
       const manageHelp = document.getElementById('manage-help');
       const historyModal = document.getElementById('history-modal');
+      const clientManagementContent = document.getElementById('client-management-content');
+      const liveMessage = document.getElementById('client-live-message');
+      const liveVersionUrl = "{{ url_for('appointments_live_version') }}";
       let currentAppointment = null;
+      let refreshInProgress = false;
+      let liveVersion = '';
 
       function escapeHtml(value) {
         const div = document.createElement('div');
@@ -301,6 +309,72 @@
 
       function formatTime(value) {
         return new Date(`2000-01-01T${value}`).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+      }
+
+      function showLiveMessage(message, isError) {
+        if (!message || !liveMessage) return;
+        liveMessage.textContent = message;
+        liveMessage.hidden = false;
+        liveMessage.classList.toggle('error', Boolean(isError));
+      }
+
+      async function refreshClientManagement() {
+        if (!clientManagementContent || refreshInProgress || document.querySelector('dialog[open]') || clientManagementContent.contains(document.activeElement)) return;
+        refreshInProgress = true;
+        try {
+          const response = await fetch(`${window.location.pathname}${window.location.search}`, {
+            headers: { 'X-Requested-With': 'XMLHttpRequest' },
+          });
+          if (!response.ok) return;
+          const page = new DOMParser().parseFromString(await response.text(), 'text/html');
+          const updatedContent = page.getElementById('client-management-content');
+          if (!updatedContent) return;
+          clientManagementContent.innerHTML = updatedContent.innerHTML;
+          bindClientManagementButtons();
+        } catch (error) {
+          // Keep the current staff view usable when the network is briefly unavailable.
+        } finally {
+          refreshInProgress = false;
+        }
+      }
+
+      async function pollForClientChanges() {
+        if (document.querySelector('dialog[open]') || clientManagementContent.contains(document.activeElement)) return;
+        try {
+          const response = await fetch(`${liveVersionUrl}?${new URLSearchParams(window.location.search)}`, {
+            headers: { 'X-Requested-With': 'XMLHttpRequest' },
+          });
+          if (!response.ok) return;
+          const update = await response.json();
+          if (!liveVersion || liveVersion !== update.version) {
+            await refreshClientManagement();
+            liveVersion = update.version;
+          }
+        } catch (error) {
+          // A later poll will retry after a temporary network interruption.
+        }
+      }
+
+      async function submitWithoutReload(form, dialogToClose) {
+        const submitButton = form.querySelector('button[type="submit"]');
+        if (submitButton) submitButton.disabled = true;
+        try {
+          const response = await fetch(form.action, {
+            method: form.method || 'POST',
+            body: new FormData(form),
+            headers: { 'X-Requested-With': 'XMLHttpRequest' },
+          });
+          const page = new DOMParser().parseFromString(await response.text(), 'text/html');
+          const flash = page.querySelector('.flash');
+          if (flash) showLiveMessage(flash.textContent.trim(), flash.classList.contains('error'));
+          if (dialogToClose && dialogToClose.open) dialogToClose.close();
+          if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
+          await refreshClientManagement();
+        } catch (error) {
+          showLiveMessage('Could not save the update. Please try again.', true);
+        } finally {
+          if (submitButton && clientManagementContent.contains(form)) submitButton.disabled = false;
+        }
       }
 
       async function populateTimes(dateInput, timeSelect, helpText) {
@@ -334,8 +408,10 @@
         }
       }
 
-      document.querySelectorAll('.schedule-button').forEach(function (button) {
-        button.addEventListener('click', function () {
+      function bindScheduleButtons() {
+        document.querySelectorAll('.schedule-button:not([data-live-bound])').forEach(function (button) {
+          button.dataset.liveBound = 'true';
+          button.addEventListener('click', function () {
           scheduleForm.action = `/admin/requests/${button.dataset.requestId}/schedule`;
           document.getElementById('schedule-client').textContent = button.dataset.clientName.trim();
           scheduleDate.value = '';
@@ -344,18 +420,22 @@
           scheduleHelp.textContent = 'Choose an available future clinic date.';
           scheduleModal.showModal();
         });
-      });
+        });
+      }
       scheduleDate.addEventListener('change', function () { populateTimes(scheduleDate, scheduleTime, scheduleHelp); });
       document.getElementById('schedule-close').addEventListener('click', function () { scheduleModal.close(); });
 
-      document.querySelectorAll('.reject-button').forEach(function (button) {
-        button.addEventListener('click', function () {
+      function bindRejectButtons() {
+        document.querySelectorAll('.reject-button:not([data-live-bound])').forEach(function (button) {
+          button.dataset.liveBound = 'true';
+          button.addEventListener('click', function () {
           rejectForm.action = `/admin/requests/${button.dataset.requestId}/reject`;
           document.getElementById('reject-client').textContent = button.dataset.clientName.trim();
           rejectForm.querySelector('textarea').value = '';
           rejectModal.showModal();
         });
-      });
+        });
+      }
       document.getElementById('reject-close').addEventListener('click', function () { rejectModal.close(); });
 
       function updateManageFields() {
@@ -375,8 +455,10 @@
         manageHelp.textContent = needsSchedule ? 'Choose a new available clinic date and time.' : '';
       }
 
-      document.querySelectorAll('.manage-button').forEach(function (button) {
-        button.addEventListener('click', function () {
+      function bindManageButtons() {
+        document.querySelectorAll('.manage-button:not([data-live-bound])').forEach(function (button) {
+          button.dataset.liveBound = 'true';
+          button.addEventListener('click', function () {
           currentAppointment = button.dataset;
           manageForm.action = `/admin/appointments/${currentAppointment.appointmentId}/manage`;
           document.getElementById('manage-client').textContent = `${currentAppointment.clientName.trim()} · ${currentAppointment.date} ${formatTime(currentAppointment.time)}`;
@@ -388,13 +470,16 @@
           updateManageFields();
           manageModal.showModal();
         });
-      });
+        });
+      }
       manageAction.addEventListener('change', updateManageFields);
       manageDate.addEventListener('change', function () { populateTimes(manageDate, manageTime, manageHelp); });
       document.getElementById('manage-close').addEventListener('click', function () { manageModal.close(); });
 
-      document.querySelectorAll('.history-button').forEach(function (button) {
-        button.addEventListener('click', async function () {
+      function bindHistoryButtons() {
+        document.querySelectorAll('.history-button:not([data-live-bound])').forEach(function (button) {
+          button.dataset.liveBound = 'true';
+          button.addEventListener('click', async function () {
           document.getElementById('history-client').textContent = button.dataset.clientName.trim();
           const list = document.getElementById('history-list');
           list.innerHTML = '<p class="notice">Loading history…</p>';
@@ -420,8 +505,52 @@
             list.innerHTML = '<p class="empty">Could not load appointment history.</p>';
           }
         });
-      });
+        });
+      }
       document.getElementById('history-close').addEventListener('click', function () { historyModal.close(); });
+
+      function bindClientManagementButtons() {
+        bindScheduleButtons();
+        bindRejectButtons();
+        bindManageButtons();
+        bindHistoryButtons();
+      }
+
+      document.addEventListener('submit', function (event) {
+        const form = event.target;
+        if (form.matches('.contact-status-form')) {
+          event.preventDefault();
+          submitWithoutReload(form);
+          return;
+        }
+        if (form === scheduleForm || form === rejectForm || form === manageForm) {
+          event.preventDefault();
+          const modal = form === scheduleForm ? scheduleModal : form === rejectForm ? rejectModal : manageModal;
+          submitWithoutReload(form, modal);
+          return;
+        }
+        if (form.matches('.client-record-filters')) {
+          event.preventDefault();
+          const parameters = new URLSearchParams(new FormData(form));
+          window.history.pushState({}, '', `${window.location.pathname}?${parameters.toString()}`);
+          if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
+          refreshClientManagement();
+        }
+      });
+
+      document.addEventListener('click', function (event) {
+        const tab = event.target.closest('.client-section-tab');
+        if (!tab || !clientManagementContent.contains(tab)) return;
+        event.preventDefault();
+        const nextUrl = new URL(tab.href, window.location.origin);
+        window.history.pushState({}, '', `${nextUrl.pathname}${nextUrl.search}`);
+        if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
+        refreshClientManagement();
+      });
+
+      window.addEventListener('popstate', refreshClientManagement);
+      bindClientManagementButtons();
+      window.setInterval(pollForClientChanges, 5000);
     })();
   </script>
 {% endblock %}

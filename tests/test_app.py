@@ -238,6 +238,47 @@ class SchedulingSystemTests(unittest.TestCase):
         self.assertIn(b"Client, Cancelled", cancelled_page.data)
         self.assertNotIn(b"Client, Approved", cancelled_page.data)
 
+    def test_newer_clients_are_shown_above_older_clients_in_each_section(self):
+        appointment_date = self.next_monday()
+        older_appointment = self.insert_appointment(appointment_date, "08:00", "Approved")
+        newer_appointment = self.insert_appointment(appointment_date, "08:15", "Approved")
+        with scheduling_app.app.app_context():
+            database = scheduling_app.db()
+            database.execute(
+                """
+                INSERT INTO client_requests (
+                    request_code, last_name, first_name, birth_date, gender, barangay,
+                    category, contact_number, contact_key, privacy_consent
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
+                """,
+                (
+                    "OLDER-REQUEST", "Older", "Client", "1990-01-01", "Others",
+                    "Barangay One", "Regular", "09170000002", "09170000002",
+                ),
+            )
+            database.execute(
+                """
+                INSERT INTO client_requests (
+                    request_code, last_name, first_name, birth_date, gender, barangay,
+                    category, contact_number, contact_key, privacy_consent
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
+                """,
+                (
+                    "NEWER-REQUEST", "Newer", "Client", "1990-01-01", "Others",
+                    "Barangay One", "Regular", "09170000003", "09170000003",
+                ),
+            )
+            database.commit()
+        self.sign_in_as_scheduler()
+
+        approved_page = self.client.get("/admin/appointments?section=approved")
+        pending_page = self.client.get("/admin/appointments?section=pending")
+
+        newer_marker = f'data-appointment-id="{newer_appointment}"'.encode()
+        older_marker = f'data-appointment-id="{older_appointment}"'.encode()
+        self.assertLess(approved_page.data.find(newer_marker), approved_page.data.find(older_marker))
+        self.assertLess(pending_page.data.find(b"Newer, Client"), pending_page.data.find(b"Older, Client"))
+
     def test_daily_request_limit_closes_the_public_form_and_blocks_submissions(self):
         with scheduling_app.app.app_context():
             database = scheduling_app.db()

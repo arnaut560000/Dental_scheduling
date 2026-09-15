@@ -2131,6 +2131,37 @@ def appointments():
     )
 
 
+@app.get("/admin/appointments/live-version")
+@roles_required("admin", "scheduler")
+def appointments_live_version():
+    """Return a small change marker so staff pages refresh only when records change."""
+    client_section = request.args.get("section", "pending")
+    if client_section not in {"pending", "approved", "cancelled"}:
+        client_section = "pending"
+    if client_section == "pending":
+        row = db().execute(
+            """
+            SELECT COUNT(*) AS count, COALESCE(MAX(id), 0) AS last_id
+            FROM client_requests
+            WHERE status='Waiting for schedule'
+            """
+        ).fetchone()
+        version = f"pending:{row['count']}:{row['last_id']}"
+    else:
+        status = "Approved" if client_section == "approved" else "Cancelled"
+        row = db().execute(
+            """
+            SELECT COUNT(*) AS count, COALESCE(MAX(id), 0) AS last_id,
+                   COALESCE(MAX(updated_at), '') AS last_update
+            FROM appointments
+            WHERE status=?
+            """,
+            (status,),
+        ).fetchone()
+        version = f"{client_section}:{row['count']}:{row['last_id']}:{row['last_update']}"
+    return {"version": version}
+
+
 @app.post("/admin/appointments/<int:appointment_id>/contact-status")
 @roles_required("admin", "scheduler")
 def record_client_contact(appointment_id):

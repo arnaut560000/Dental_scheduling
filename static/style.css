@@ -232,6 +232,8 @@ button, .button-link { border: 0; border-radius: 7px; background: var(--green); 
 .login button { width: 100%; }
 .flash { margin-bottom: 18px; padding: 13px 15px; border-radius: 8px; background: #e5f5ef; color: #166248; }
 .flash.error { background: #fff0ee; color: #a33a32; }
+.live-message { margin: -8px 0 18px; padding: 10px 13px; border-radius: 8px; background: #e5f5ef; color: #166248; font-size: 13px; font-weight: 700; }
+.live-message.error { background: #fff0ee; color: #a33a32; }
 .page-title {
   display: flex;
   align-items: flex-end;
