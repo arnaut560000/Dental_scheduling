@@ -111,13 +111,13 @@
           <div>
             <p class="eyebrow">APPROVED APPOINTMENTS</p>
             <h2>Contact and appointment follow-up</h2>
-            <p class="notice">Called is recorded automatically when a schedule is approved. Use Texted after sending the appointment details. Manage handles notes, rescheduling, cancellations, and marking a client served.</p>
+            <p class="notice">Called is recorded when the schedule is approved. Use Texted after sending the appointment details. Manage handles notes, rescheduling, cancellations, and marking a client served.</p>
           </div>
           <span class="section-count">{{ section_counts.approved }} approved</span>
         </div>
         {% if appointments %}
           <table class="wide">
-            <thead><tr><th>Schedule</th><th>Client</th><th>Sector and address</th><th>Contact</th><th>Follow-up</th><th>Actions</th></tr></thead>
+            <thead><tr><th>Schedule</th><th>Client</th><th>Sector and address</th><th>Contact</th><th>Status</th><th>Actions</th></tr></thead>
             <tbody>
               {% for appointment in appointments %}
                 <tr>
@@ -126,11 +126,11 @@
                   <td><strong>{{ appointment.category }}</strong><br>{{ appointment.barangay }}</td>
                   <td>{{ appointment.contact_number }}{% if session.role == 'admin' and appointment.email %}<br>{{ appointment.email }}{% endif %}</td>
                   <td>
-                    <span class="badge approved">Approved</span><br>
-                    <span class="contact-status" aria-label="Client contact status">
-                      <span class="contact-state {% if appointment.texted %}recorded{% endif %}">Texted: {% if appointment.texted %}Recorded{% else %}Not yet{% endif %}</span>
-                      <span class="contact-state {% if appointment.called %}recorded{% endif %}">Called: {% if appointment.called %}Recorded automatically{% else %}Not yet{% endif %}</span>
-                    </span>
+                    <div class="status-badges" aria-label="Appointment and contact status">
+                      <span class="badge approved">Approved</span>
+                      {% if appointment.called %}<span class="badge approved">Called</span>{% endif %}
+                      {% if appointment.texted %}<span class="badge approved">Texted</span>{% endif %}
+                    </div>
                   </td>
                   <td>
                     <div class="inline-actions">

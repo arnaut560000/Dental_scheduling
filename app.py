@@ -1999,7 +1999,7 @@ def schedule_request(request_id):
                 new_time=appointment_time,
                 notes=(
                     "Appointment created from the first-come-first-served queue. "
-                    "Called was recorded automatically when the appointment was approved."
+                    "Called was recorded when the appointment was approved."
                 ),
             )
             audit(
@@ -2134,7 +2134,7 @@ def appointments():
 @app.post("/admin/appointments/<int:appointment_id>/contact-status")
 @roles_required("admin", "scheduler")
 def record_client_contact(appointment_id):
-    """Record Texted and Called separately, then reload the approved-client page."""
+    """Record a staff text update, then reload the approved-client page."""
     contact_method = request.form.get("contact_status", "")
     if contact_method not in VALID_CONTACT_STATUSES:
         flash("Choose Texted when recording client contact.", "error")
