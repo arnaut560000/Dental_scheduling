@@ -2032,8 +2032,6 @@ def appointments():
     selected_date = request.args.get("date", "")
     category_filter = request.args.get("category", "")
     search = request.args.get("search", "").strip()
-    start_date = request.args.get("start_date", "")
-    end_date = request.args.get("end_date", "")
     if category_filter not in VALID_CATEGORIES:
         category_filter = ""
     rows = []
@@ -2047,10 +2045,6 @@ def appointments():
         if search:
             query += " AND (LOWER(last_name || ' ' || first_name || ' ' || COALESCE(middle_initial, '')) LIKE ? OR contact_key LIKE ?)"
             params.extend([f"%{search.lower()}%", f"%{normalize_contact(search)}%"])
-        if start_date:
-            query += " AND appointment_date>=?"; params.append(start_date)
-        if end_date:
-            query += " AND appointment_date<=?"; params.append(end_date)
         query += " ORDER BY appointment_date ASC, appointment_time ASC, id ASC"
         rows = db().execute(query, params).fetchall()
     waiting_requests = db().execute(
@@ -2089,8 +2083,6 @@ def appointments():
         selected_category=category_filter,
         categories=["Regular", "PWD", "Senior Citizen", "Pregnant Woman"],
         search=search,
-        start_date=start_date,
-        end_date=end_date,
         rejected_requests=rejected_requests,
         today=clinic_today().isoformat(),
     )

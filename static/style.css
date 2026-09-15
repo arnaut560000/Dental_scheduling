@@ -100,7 +100,7 @@ body {
   overflow-y: auto;
 }
 
-.staff-layout nav a {
+.staff-layout .site-header nav a {
   display: flex;
   align-items: center;
   min-height: 42px;
