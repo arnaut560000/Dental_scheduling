@@ -2105,12 +2105,29 @@ def record_client_contact(appointment_id):
         flash("Appointment not found.", "error")
     elif appointment["status"] != "Approved":
         flash("Contact tracking is available only for approved appointments.", "error")
-    elif appointment["contact_status"] == contact_status:
-        flash(f"This client is already marked as {contact_status.lower()}.", "success")
     else:
+        current_methods = (
+            set()
+            if appointment["contact_status"] == "Not contacted"
+            else {
+                method.strip()
+                for method in appointment["contact_status"].split(",")
+                if method.strip()
+            }
+        )
+
+        if contact_status in current_methods:
+            flash(f"This client is already marked as {contact_status.lower()}.", "success")
+            return redirect(url_for("appointments", section="approved"))
+
+        current_methods.add(contact_status)
+        updated_contact_status = ", ".join(
+            method for method in ("Texted", "Called") if method in current_methods
+        )
+
         database.execute(
-            "UPDATE appointments SET contact_status=?, updated_at=CURRENT_TIMESTAMP WHERE id=?",
-            (contact_status, appointment_id),
+            "UPDATE appointments SET contact_status=?, update_at=CURRENT_TIMESTAMP WHERE id=?",
+            (update_contact_status, appointment_id),
         )
         record_appointment_history(
             appointment_id,
