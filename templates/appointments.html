@@ -102,6 +102,9 @@
         </select>
       </label>
       <button>Search records</button>
+      {% if client_section == 'approved' %}
+        <button class="secondary-button" id="add-client-button" type="button">Add client</button>
+      {% endif %}
       {% if selected_date and session.role == 'admin' %}
         <a class="button-link secondary" href="{{ url_for('export_day', date=selected_date) }}">Export this day</a>
       {% endif %}
@@ -113,13 +116,13 @@
           <div>
             <p class="eyebrow">APPROVED APPOINTMENTS</p>
             <h2>Approved appointments</h2>
-            <p class="notice">Click Texted after sending the appointment details. Manage handles notes, rescheduling, cancellations, and marking a client served.</p>
+            <p class="notice">Click Texted after sending the appointment details. Use Manage for staff-only notes.</p>
           </div>
           <span class="section-count">{{ section_counts.approved }} approved</span>
         </div>
         {% if appointments %}
           <table class="wide">
-            <thead><tr><th>Schedule</th><th>Client</th><th>Sector and address</th><th>Contact</th><th>Status</th><th>Actions</th></tr></thead>
+            <thead><tr><th>Schedule</th><th>Client</th><th>Sector and address</th><th>Contact</th><th>Mode of registration</th><th>Status</th><th>Actions</th></tr></thead>
             <tbody>
               {% for appointment in appointments %}
                 <tr>
@@ -127,6 +130,7 @@
                   <td><strong>{{ appointment.last_name }}, {{ appointment.first_name }} {{ appointment.middle_initial }}</strong><br>{% if session.role == 'admin' %}{{ appointment.birth_date }} · {% endif %}{{ appointment.gender or 'Not recorded' }}</td>
                   <td><strong>{{ appointment.category }}</strong><br>{{ appointment.barangay }}</td>
                   <td>{{ appointment.contact_number }}{% if session.role == 'admin' and appointment.email %}<br>{{ appointment.email }}{% endif %}</td>
+                  <td><span class="badge">{{ appointment.registration_mode or 'Form' }}</span></td>
                   <td>
                     <div class="status-badges" aria-label="Appointment status">
                       <span class="badge approved">Approved</span>
@@ -229,34 +233,70 @@
   <dialog id="manage-modal" aria-labelledby="manage-heading">
     <div class="modal-header">
       <div>
-        <p class="eyebrow">APPOINTMENT ACTION</p>
-        <h2 id="manage-heading">Manage appointment</h2>
+        <p class="eyebrow">STAFF NOTES</p>
+        <h2 id="manage-heading">Manage appointment notes</h2>
         <p id="manage-client" class="notice"></p>
       </div>
       <button class="close-modal" id="manage-close" type="button" aria-label="Close">×</button>
     </div>
     <form id="manage-form" method="post" class="appointment-form">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <label>Staff-only notes<textarea id="manage-notes" name="staff_notes" maxlength="2000" placeholder="Internal notes: not visible to clients"></textarea></label>
+      <button type="submit">Save notes</button>
+    </form>
+  </dialog>
+
+  <dialog id="add-client-modal" aria-labelledby="add-client-heading">
+    <div class="modal-header">
+      <div>
+        <p class="eyebrow">STAFF REGISTRATION</p>
+        <h2 id="add-client-heading">Add client</h2>
+        <p class="notice">Use this only for a client recorded directly by clinic staff.</p>
+      </div>
+      <button class="close-modal" id="add-client-close" type="button" aria-label="Close">×</button>
+    </div>
+    <form id="add-client-form" method="post" action="{{ url_for('add_manual_appointment') }}" class="appointment-form">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <div class="form-grid">
-        <label>
-          Action
-          <select id="manage-action" name="action" required>
-            <option value="notes">Save staff notes only</option>
-            <option value="finished" data-active-only>Mark client served</option>
-            <option value="reschedule" data-active-only>Reschedule appointment</option>
-            <option value="cancelled" data-active-only>Cancel appointment</option>
-            <option value="no_show" data-active-only>Mark client no-show</option>
+        <label>Last name<input name="last_name" maxlength="80" required></label>
+        <label>First name<input name="first_name" maxlength="80" required></label>
+        <label>Middle initial<input name="middle_initial" maxlength="10"></label>
+        <label>Birth date<input name="birth_date" type="date" required></label>
+        <label>Gender
+          <select name="gender" required>
+            <option value="">Choose gender</option>
+            <option value="Female">Female</option>
+            <option value="Male">Male</option>
+            <option value="Others">Others</option>
           </select>
         </label>
-        <label id="manage-reason-group" hidden>Reason<textarea id="manage-reason" name="reason" maxlength="500"></textarea></label>
+        <label>Client sector
+          <select name="category" required>
+            <option value="">Choose sector</option>
+            {% for item in categories %}<option value="{{ item }}">{{ item }}</option>{% endfor %}
+          </select>
+        </label>
+        <label>Barangay
+          <select name="barangay" required>
+            <option value="">Choose barangay</option>
+            {% for item in barangays %}<option value="{{ item }}">{{ item }}</option>{% endfor %}
+          </select>
+        </label>
+        <label>11-digit contact number<input name="contact_number" inputmode="numeric" pattern="[0-9]{11}" maxlength="11" required></label>
+        <label>Email address <span class="notice">(optional)</span><input name="email" type="email" maxlength="254"></label>
+        <label>Mode of registration
+          <select name="registration_mode" required>
+            <option value="">Choose mode</option>
+            <option value="Email">Email</option>
+            <option value="Form">Form</option>
+            <option value="Text">Text</option>
+          </select>
+        </label>
+        <label>Appointment date<input id="add-client-date" name="appointment_date" type="date" min="{{ today }}" required></label>
+        <label>Available time<select id="add-client-time" name="appointment_time" required disabled><option value="">Choose a date first</option></select></label>
       </div>
-      <div id="reschedule-fields" class="form-grid" hidden>
-        <label>New appointment date<input id="manage-date" type="date" name="appointment_date" min="{{ today }}"></label>
-        <label>New available time<select id="manage-time" name="appointment_time" disabled><option value="">Choose a date first</option></select></label>
-      </div>
-      <p id="manage-help" class="notice"></p>
-      <label>Staff-only notes<textarea id="manage-notes" name="staff_notes" maxlength="2000" placeholder="Internal notes: not visible to clients"></textarea></label>
-      <button type="submit">Save appointment action</button>
+      <p id="add-client-help" class="notice">Choose an available future clinic date.</p>
+      <button type="submit">Add approved client</button>
     </form>
   </dialog>
 
@@ -285,14 +325,12 @@
       const rejectForm = document.getElementById('reject-form');
       const manageModal = document.getElementById('manage-modal');
       const manageForm = document.getElementById('manage-form');
-      const manageAction = document.getElementById('manage-action');
-      const manageReasonGroup = document.getElementById('manage-reason-group');
-      const manageReason = document.getElementById('manage-reason');
-      const rescheduleFields = document.getElementById('reschedule-fields');
-      const manageDate = document.getElementById('manage-date');
-      const manageTime = document.getElementById('manage-time');
       const manageNotes = document.getElementById('manage-notes');
-      const manageHelp = document.getElementById('manage-help');
+      const addClientModal = document.getElementById('add-client-modal');
+      const addClientForm = document.getElementById('add-client-form');
+      const addClientDate = document.getElementById('add-client-date');
+      const addClientTime = document.getElementById('add-client-time');
+      const addClientHelp = document.getElementById('add-client-help');
       const historyModal = document.getElementById('history-modal');
       const clientManagementContent = document.getElementById('client-management-content');
       const liveMessage = document.getElementById('client-live-message');
@@ -444,23 +482,6 @@
       }
       document.getElementById('reject-close').addEventListener('click', function () { rejectModal.close(); });
 
-      function updateManageFields() {
-        const action = manageAction.value;
-        const needsReason = ['cancelled', 'no_show', 'reschedule'].includes(action);
-        const needsSchedule = action === 'reschedule';
-        manageReasonGroup.hidden = !needsReason;
-        manageReason.required = needsReason;
-        rescheduleFields.hidden = !needsSchedule;
-        manageDate.required = needsSchedule;
-        manageTime.required = needsSchedule;
-        if (!needsSchedule) {
-          manageDate.value = '';
-          manageTime.disabled = true;
-          manageTime.innerHTML = '<option value="">Choose a date first</option>';
-        }
-        manageHelp.textContent = needsSchedule ? 'Choose a new available clinic date and time.' : '';
-      }
-
       function bindManageButtons() {
         document.querySelectorAll('.manage-button:not([data-live-bound])').forEach(function (button) {
           button.dataset.liveBound = 'true';
@@ -469,18 +490,26 @@
           manageForm.action = `/admin/appointments/${currentAppointment.appointmentId}/manage`;
           document.getElementById('manage-client').textContent = `${currentAppointment.clientName.trim()} · ${currentAppointment.date} ${formatTime(currentAppointment.time)}`;
           manageNotes.value = currentAppointment.notes || '';
-          manageReason.value = '';
-          const active = ['Pending', 'Approved'].includes(currentAppointment.status);
-          manageAction.querySelectorAll('[data-active-only]').forEach(function (option) { option.disabled = !active; });
-          manageAction.value = 'notes';
-          updateManageFields();
           manageModal.showModal();
         });
         });
       }
-      manageAction.addEventListener('change', updateManageFields);
-      manageDate.addEventListener('change', function () { populateTimes(manageDate, manageTime, manageHelp); });
       document.getElementById('manage-close').addEventListener('click', function () { manageModal.close(); });
+
+      function bindAddClientButton() {
+        const button = document.getElementById('add-client-button');
+        if (!button || button.dataset.liveBound) return;
+        button.dataset.liveBound = 'true';
+        button.addEventListener('click', function () {
+          addClientForm.reset();
+          addClientTime.disabled = true;
+          addClientTime.innerHTML = '<option value="">Choose a date first</option>';
+          addClientHelp.textContent = 'Choose an available future clinic date.';
+          addClientModal.showModal();
+        });
+      }
+      addClientDate.addEventListener('change', function () { populateTimes(addClientDate, addClientTime, addClientHelp); });
+      document.getElementById('add-client-close').addEventListener('click', function () { addClientModal.close(); });
 
       function bindHistoryButtons() {
         document.querySelectorAll('.history-button:not([data-live-bound])').forEach(function (button) {
@@ -519,6 +548,7 @@
         bindScheduleButtons();
         bindRejectButtons();
         bindManageButtons();
+        bindAddClientButton();
         bindHistoryButtons();
       }
 
@@ -529,9 +559,9 @@
           submitWithoutReload(form);
           return;
         }
-        if (form === scheduleForm || form === rejectForm || form === manageForm) {
+        if (form === scheduleForm || form === rejectForm || form === manageForm || form === addClientForm) {
           event.preventDefault();
-          const modal = form === scheduleForm ? scheduleModal : form === rejectForm ? rejectModal : manageModal;
+          const modal = form === scheduleForm ? scheduleModal : form === rejectForm ? rejectModal : form === manageForm ? manageModal : addClientModal;
           submitWithoutReload(form, modal);
           return;
         }

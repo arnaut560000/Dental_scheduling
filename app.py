@@ -72,6 +72,7 @@ PRIVACY_NOTICE_VERSION = "2026-09-13"
 CLINIC_DAYS = {0, 2, 4}  # Monday, Wednesday, Friday
 VALID_CATEGORIES = {"Regular", "PWD", "Senior Citizen", "Pregnant Woman"}
 VALID_GENDERS = {"Female", "Male", "Others"}
+VALID_REGISTRATION_MODES = {"Email", "Form", "Text"}
 BARANGAYS = [
     "Andal Alino (Pob.)",
     "Bagong Sikat",
@@ -243,6 +244,7 @@ def create_postgres_schema(database):
             last_name TEXT NOT NULL, first_name TEXT NOT NULL, middle_initial TEXT,
             birth_date TEXT NOT NULL, gender TEXT NOT NULL, barangay TEXT NOT NULL, category TEXT NOT NULL,
             contact_number TEXT NOT NULL, contact_key TEXT, email TEXT,
+            registration_mode TEXT NOT NULL DEFAULT 'Form',
             appointment_date TEXT NOT NULL, appointment_time TEXT NOT NULL,
             status TEXT NOT NULL DEFAULT 'Pending', status_reason TEXT,
             staff_notes TEXT, contact_status TEXT NOT NULL DEFAULT 'Not contacted',
@@ -326,6 +328,7 @@ def apply_initial_schema(database):
             last_name TEXT NOT NULL, first_name TEXT NOT NULL, middle_initial TEXT,
             birth_date TEXT NOT NULL, gender TEXT NOT NULL, barangay TEXT NOT NULL, category TEXT NOT NULL,
             contact_number TEXT NOT NULL, contact_key TEXT, email TEXT, appointment_date TEXT NOT NULL,
+            registration_mode TEXT NOT NULL DEFAULT 'Form',
             appointment_time TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'Pending',
             status_reason TEXT, staff_notes TEXT,
             contact_status TEXT NOT NULL DEFAULT 'Not contacted',
@@ -468,6 +471,7 @@ CLINIC_CONFIGURATION_MIGRATION = "003_clinic_configuration"
 PRIVACY_CONSENT_MIGRATION = "004_privacy_consent_version"
 CONTACT_STATUS_MIGRATION = "005_appointment_contact_status"
 CONTACT_METHOD_FLAGS_MIGRATION = "006_appointment_contact_method_flags"
+REGISTRATION_MODE_MIGRATION = "007_appointment_registration_mode"
 
 DEFAULT_CLINIC_SETTINGS = {
     "clinic_days": "0,2,4",
@@ -649,6 +653,22 @@ def migrate_appointment_contact_method_flags(database):
     )
 
 
+def migrate_appointment_registration_mode(database):
+    """Record how each approved client reached the clinic."""
+    columns = table_columns(database, "appointments")
+    if "registration_mode" not in columns:
+        database.execute(
+            "ALTER TABLE appointments ADD COLUMN registration_mode TEXT NOT NULL DEFAULT 'Form'"
+        )
+    database.execute(
+        """
+        UPDATE appointments
+        SET registration_mode='Form'
+        WHERE registration_mode IS NULL OR TRIM(registration_mode)=''
+        """
+    )
+
+
 def clinic_configuration():
     """Return validated scheduling settings, cached for the current request."""
     if "clinic_configuration" in g:
@@ -775,6 +795,10 @@ def init_db():
         if CONTACT_METHOD_FLAGS_MIGRATION not in completed:
             migrate_appointment_contact_method_flags(database)
             record_migration(database, CONTACT_METHOD_FLAGS_MIGRATION)
+            completed.add(CONTACT_METHOD_FLAGS_MIGRATION)
+        if REGISTRATION_MODE_MIGRATION not in completed:
+            migrate_appointment_registration_mode(database)
+            record_migration(database, REGISTRATION_MODE_MIGRATION)
     finally:
         if locked:
             database.execute("SELECT pg_advisory_unlock(83742619)")
@@ -1957,8 +1981,8 @@ def schedule_request(request_id):
                 INSERT INTO appointments (
                     last_name, first_name, middle_initial, birth_date, gender, barangay,
                     category, contact_number, contact_key, email, appointment_date,
-                    appointment_time, status, called
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Approved', 1)
+                    appointment_time, registration_mode, status, called
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Form', 'Approved', 1)
                 """,
                 (
                     fresh_request["last_name"],
@@ -2014,6 +2038,122 @@ def schedule_request(request_id):
             flash("That time was just taken. Choose another.", "error")
 
     return redirect(url_for("appointments"))
+
+
+@app.post("/admin/appointments/manual")
+@roles_required("admin", "scheduler")
+def add_manual_appointment():
+    """Add an already-approved client recorded by clinic staff."""
+    fields = {
+        "last_name": request.form.get("last_name", "").strip(),
+        "first_name": request.form.get("first_name", "").strip(),
+        "middle_initial": request.form.get("middle_initial", "").strip(),
+        "birth_date": request.form.get("birth_date", ""),
+        "gender": request.form.get("gender", ""),
+        "barangay": request.form.get("barangay", ""),
+        "category": request.form.get("category", ""),
+        "contact_number": request.form.get("contact_number", "").strip(),
+        "email": request.form.get("email", "").strip(),
+        "appointment_date": request.form.get("appointment_date", ""),
+        "appointment_time": request.form.get("appointment_time", ""),
+        "registration_mode": request.form.get("registration_mode", ""),
+    }
+    contact_key = normalize_contact(fields["contact_number"])
+
+    if not fields["last_name"] or not fields["first_name"]:
+        flash("Enter the client's first and last name.", "error")
+    elif any(len(fields[key]) > 80 for key in ("last_name", "first_name")):
+        flash("Client names must be 80 characters or fewer.", "error")
+    elif len(fields["middle_initial"]) > 10:
+        flash("The middle initial must be 10 characters or fewer.", "error")
+    elif not valid_birth_date(fields["birth_date"]):
+        flash("Enter a valid birth date.", "error")
+    elif fields["gender"] not in VALID_GENDERS:
+        flash("Choose a valid gender.", "error")
+    elif fields["barangay"] not in BARANGAYS:
+        flash("Choose a valid barangay.", "error")
+    elif fields["category"] not in VALID_CATEGORIES:
+        flash("Choose a valid client sector.", "error")
+    elif len(contact_key) != 11:
+        flash("Enter an 11-digit contact number.", "error")
+    elif not valid_email(fields["email"]):
+        flash("Enter a valid email address or leave it blank.", "error")
+    elif fields["registration_mode"] not in VALID_REGISTRATION_MODES:
+        flash("Choose how the client registered.", "error")
+    elif not valid_clinic_date(fields["appointment_date"]):
+        flash("Choose an available future clinic date.", "error")
+    elif fields["appointment_time"] not in available_slots(fields["appointment_date"]):
+        flash("That time is no longer available. Choose another.", "error")
+    else:
+        database = db()
+        try:
+            begin_write_transaction(database)
+            daily_count = database.execute(
+                """
+                SELECT COUNT(*) FROM appointments
+                WHERE appointment_date=? AND status IN ('Pending', 'Approved')
+                """,
+                (fields["appointment_date"],),
+            ).fetchone()[0]
+            slot_taken = database.execute(
+                """
+                SELECT 1 FROM appointments
+                WHERE appointment_date=? AND appointment_time=?
+                  AND status IN ('Pending', 'Approved')
+                """,
+                (fields["appointment_date"], fields["appointment_time"]),
+            ).fetchone()
+            if daily_count >= clinic_configuration()["daily_limit"]:
+                database.rollback()
+                flash("This day has reached the clinic client limit.", "error")
+            elif slot_taken:
+                database.rollback()
+                flash("That time was just taken. Choose another.", "error")
+            else:
+                appointment_id = insert_and_get_id(
+                    database,
+                    """
+                    INSERT INTO appointments (
+                        last_name, first_name, middle_initial, birth_date, gender, barangay,
+                        category, contact_number, contact_key, email, appointment_date,
+                        appointment_time, registration_mode, status, called
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Approved', 1)
+                    """,
+                    (
+                        fields["last_name"], fields["first_name"], fields["middle_initial"],
+                        fields["birth_date"], fields["gender"], fields["barangay"],
+                        fields["category"], fields["contact_number"], contact_key,
+                        fields["email"] or None, fields["appointment_date"],
+                        fields["appointment_time"], fields["registration_mode"],
+                    ),
+                )
+                record_appointment_history(
+                    appointment_id,
+                    "Added by staff",
+                    new_status="Approved",
+                    new_date=fields["appointment_date"],
+                    new_time=fields["appointment_time"],
+                    notes=(
+                        f"Mode of registration: {fields['registration_mode']}. "
+                        "Called was recorded when the appointment was approved."
+                    ),
+                )
+                audit(
+                    "client_added_manually",
+                    appointment_id=appointment_id,
+                    details=(
+                        f"registration_mode={fields['registration_mode']}; "
+                        f"date={fields['appointment_date']}; time={fields['appointment_time']}"
+                    ),
+                )
+                database.commit()
+                flash("Client added to approved appointments.", "success")
+                return redirect(url_for("appointments", section="approved"))
+        except (sqlite3.IntegrityError, PostgresIntegrityError):
+            database.rollback()
+            flash("That time was just taken. Choose another.", "error")
+
+    return redirect(url_for("appointments", section="approved"))
 
 
 @app.post("/admin/requests/<int:request_id>/reject")
@@ -2124,6 +2264,7 @@ def appointments():
         selected_date=selected_date,
         selected_category=category_filter,
         categories=["Regular", "PWD", "Senior Citizen", "Pregnant Woman"],
+        barangays=BARANGAYS,
         search=search,
         rejected_requests=rejected_requests,
         today=clinic_today().isoformat(),
@@ -2202,7 +2343,7 @@ def mark_client_texted(appointment_id):
 @app.post("/admin/appointments/<int:appointment_id>/manage")
 @roles_required("admin", "scheduler")
 def manage_appointment(appointment_id):
-    action = request.form.get("action", "")
+    action = request.form.get("action", "notes")
     reason = request.form.get("reason", "").strip()
     staff_notes = request.form.get("staff_notes", "").strip()
     appointment_date = request.form.get("appointment_date", "")

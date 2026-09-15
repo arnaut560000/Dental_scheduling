@@ -201,8 +201,45 @@ class SchedulingSystemTests(unittest.TestCase):
         self.assertIn(b"Client schedule assigned successfully.", response.data)
         with scheduling_app.app.app_context():
             appointment = scheduling_app.db().execute(
-                "SELECT called FROM appointments WHERE first_name='Called'"
+                "SELECT called, registration_mode FROM appointments WHERE first_name='Called'"
             ).fetchone()
+        self.assertEqual(appointment["called"], 1)
+        self.assertEqual(appointment["registration_mode"], "Form")
+
+    def test_staff_can_add_an_approved_client_with_registration_mode(self):
+        appointment_date = self.next_monday()
+        self.sign_in_as_scheduler()
+
+        response = self.client.post(
+            "/admin/appointments/manual",
+            data={
+                "last_name": "Manual",
+                "first_name": "Email",
+                "middle_initial": "A.",
+                "birth_date": "1995-05-05",
+                "gender": "Female",
+                "barangay": scheduling_app.BARANGAYS[0],
+                "category": "PWD",
+                "contact_number": "09170000009",
+                "email": "manual@example.com",
+                "registration_mode": "Email",
+                "appointment_date": appointment_date.isoformat(),
+                "appointment_time": "08:00",
+            },
+            follow_redirects=True,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b"Client added to approved appointments.", response.data)
+        with scheduling_app.app.app_context():
+            appointment = scheduling_app.db().execute(
+                """
+                SELECT status, registration_mode, called
+                FROM appointments WHERE first_name='Email'
+                """
+            ).fetchone()
+        self.assertEqual(appointment["status"], "Approved")
+        self.assertEqual(appointment["registration_mode"], "Email")
         self.assertEqual(appointment["called"], 1)
 
     def test_contact_method_migration_preserves_existing_contact_records(self):
@@ -450,6 +487,7 @@ class SchedulingSystemTests(unittest.TestCase):
         self.assertIn(scheduling_app.PRIVACY_CONSENT_MIGRATION, versions)
         self.assertIn(scheduling_app.CONTACT_STATUS_MIGRATION, versions)
         self.assertIn(scheduling_app.CONTACT_METHOD_FLAGS_MIGRATION, versions)
+        self.assertIn(scheduling_app.REGISTRATION_MODE_MIGRATION, versions)
 
         with scheduling_app.app.app_context():
             appointment_columns = scheduling_app.table_columns(
@@ -458,6 +496,7 @@ class SchedulingSystemTests(unittest.TestCase):
         self.assertIn("contact_status", appointment_columns)
         self.assertIn("texted", appointment_columns)
         self.assertIn("called", appointment_columns)
+        self.assertIn("registration_mode", appointment_columns)
 
         with scheduling_app.app.app_context():
             settings = {
