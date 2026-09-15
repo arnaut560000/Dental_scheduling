@@ -153,13 +153,12 @@ class SchedulingSystemTests(unittest.TestCase):
         self.sign_in_as_scheduler()
 
         response = self.client.post(
-            f"/admin/appointments/{appointment_id}/contact-status",
-            data={"contact_status": "Texted"},
-            follow_redirects=True,
+            f"/admin/appointments/{appointment_id}/texted",
+            headers={"X-Requested-With": "XMLHttpRequest"},
         )
 
         self.assertEqual(response.status_code, 200)
-        self.assertIn(b"Client marked as texted.", response.data)
+        self.assertEqual(response.get_json(), {"ok": True, "message": "Texted"})
         with scheduling_app.app.app_context():
             appointment = scheduling_app.db().execute(
                 "SELECT texted, called FROM appointments WHERE id=?", (appointment_id,)
@@ -170,8 +169,8 @@ class SchedulingSystemTests(unittest.TestCase):
             ).fetchone()
         self.assertEqual(appointment["texted"], 1)
         self.assertEqual(appointment["called"], 0)
-        self.assertEqual(history["action"], "Client contact recorded")
-        self.assertEqual(history["notes"], "Contact method: Texted.")
+        self.assertEqual(history["action"], "Texted")
+        self.assertIsNone(history["notes"])
 
     def test_scheduling_a_client_automatically_marks_called(self):
         appointment_date = self.next_monday()
@@ -238,7 +237,7 @@ class SchedulingSystemTests(unittest.TestCase):
         self.assertIn(b"Client, Cancelled", cancelled_page.data)
         self.assertNotIn(b"Client, Approved", cancelled_page.data)
 
-    def test_newer_clients_are_shown_above_older_clients_in_each_section(self):
+    def test_pending_queue_is_oldest_first_and_approved_clients_are_newest_first(self):
         appointment_date = self.next_monday()
         older_appointment = self.insert_appointment(appointment_date, "08:00", "Approved")
         newer_appointment = self.insert_appointment(appointment_date, "08:15", "Approved")
@@ -277,7 +276,7 @@ class SchedulingSystemTests(unittest.TestCase):
         newer_marker = f'data-appointment-id="{newer_appointment}"'.encode()
         older_marker = f'data-appointment-id="{older_appointment}"'.encode()
         self.assertLess(approved_page.data.find(newer_marker), approved_page.data.find(older_marker))
-        self.assertLess(pending_page.data.find(b"Newer, Client"), pending_page.data.find(b"Older, Client"))
+        self.assertLess(pending_page.data.find(b"Older, Client"), pending_page.data.find(b"Newer, Client"))
 
     def test_daily_request_limit_closes_the_public_form_and_blocks_submissions(self):
         with scheduling_app.app.app_context():

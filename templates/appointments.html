@@ -36,7 +36,7 @@
         <div>
           <p class="eyebrow">PENDING REQUESTS</p>
           <h2>Waiting for schedule</h2>
-          <p class="notice">Newest requests appear first. Scheduling priority still follows the original submission order.</p>
+          <p class="notice">Earlier requests appear first. Newer requests are placed at the bottom of the queue.</p>
         </div>
         <span class="section-count">{{ section_counts.pending }} in queue</span>
       </div>
@@ -48,7 +48,7 @@
           <tbody>
             {% for client_request in waiting_requests %}
               <tr>
-                <td><strong>{{ client_request.created_at }}</strong><br><span class="notice">{% if client_request.id == next_waiting_request_id %}Next to schedule{% else %}New request{% endif %}</span></td>
+                <td><strong>{{ client_request.created_at }}</strong><br><span class="notice">{% if client_request.id == next_waiting_request_id %}Next to schedule{% else %}Waiting in queue{% endif %}</span></td>
                 <td><strong>{{ client_request.last_name }}, {{ client_request.first_name }} {{ client_request.middle_initial }}</strong><br>{% if session.role == 'admin' %}{{ client_request.birth_date }} · {% endif %}{{ client_request.gender or 'Not recorded' }}</td>
                 <td><strong>{{ client_request.category }}</strong><br>{{ client_request.barangay }}</td>
                 <td>{{ client_request.contact_number }}{% if session.role == 'admin' and client_request.email %}<br>{{ client_request.email }}{% endif %}</td>
@@ -112,8 +112,8 @@
         <div class="section-summary">
           <div>
             <p class="eyebrow">APPROVED APPOINTMENTS</p>
-            <h2>Contact and appointment follow-up</h2>
-            <p class="notice">Called is recorded when the schedule is approved. Use Texted after sending the appointment details. Manage handles notes, rescheduling, cancellations, and marking a client served.</p>
+            <h2>Approved appointments</h2>
+            <p class="notice">Click Texted after sending the appointment details. Manage handles notes, rescheduling, cancellations, and marking a client served.</p>
           </div>
           <span class="section-count">{{ section_counts.approved }} approved</span>
         </div>
@@ -128,7 +128,7 @@
                   <td><strong>{{ appointment.category }}</strong><br>{{ appointment.barangay }}</td>
                   <td>{{ appointment.contact_number }}{% if session.role == 'admin' and appointment.email %}<br>{{ appointment.email }}{% endif %}</td>
                   <td>
-                    <div class="status-badges" aria-label="Appointment and contact status">
+                    <div class="status-badges" aria-label="Appointment status">
                       <span class="badge approved">Approved</span>
                       {% if appointment.called %}<span class="badge approved">Called</span>{% endif %}
                       {% if appointment.texted %}<span class="badge approved">Texted</span>{% endif %}
@@ -136,9 +136,9 @@
                   </td>
                   <td>
                     <div class="inline-actions">
-                      <form class="contact-status-form" method="post" action="{{ url_for('record_client_contact', appointment_id=appointment.id) }}">
+                      <form class="texted-form" method="post" action="{{ url_for('mark_client_texted', appointment_id=appointment.id) }}">
                         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                        <button class="small secondary-button" type="submit" name="contact_status" value="Texted" {% if appointment.texted %}disabled{% endif %}>Texted</button>
+                        <button class="small secondary-button" type="submit" {% if appointment.texted %}disabled{% endif %}>Texted</button>
                       </form>
                       <button class="small manage-button" type="button" data-appointment-id="{{ appointment.id }}" data-client-name="{{ appointment.last_name }}, {{ appointment.first_name }} {{ appointment.middle_initial or '' }}" data-status="{{ appointment.status }}" data-date="{{ appointment.appointment_date }}" data-time="{{ appointment.appointment_time }}" data-notes="{{ appointment.staff_notes or '' }}">Manage</button>
                       <button class="small secondary-button history-button" type="button" data-appointment-id="{{ appointment.id }}" data-client-name="{{ appointment.last_name }}, {{ appointment.first_name }} {{ appointment.middle_initial or '' }}">History</button>
@@ -364,9 +364,15 @@
             body: new FormData(form),
             headers: { 'X-Requested-With': 'XMLHttpRequest' },
           });
-          const page = new DOMParser().parseFromString(await response.text(), 'text/html');
-          const flash = page.querySelector('.flash');
-          if (flash) showLiveMessage(flash.textContent.trim(), flash.classList.contains('error'));
+          if (response.headers.get('content-type').includes('application/json')) {
+            const result = await response.json();
+            showLiveMessage(result.message, !result.ok);
+            if (!result.ok) return;
+          } else {
+            const page = new DOMParser().parseFromString(await response.text(), 'text/html');
+            const flash = page.querySelector('.flash');
+            if (flash) showLiveMessage(flash.textContent.trim(), flash.classList.contains('error'));
+          }
           if (dialogToClose && dialogToClose.open) dialogToClose.close();
           if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
           await refreshClientManagement();
@@ -518,7 +524,7 @@
 
       document.addEventListener('submit', function (event) {
         const form = event.target;
-        if (form.matches('.contact-status-form')) {
+        if (form.matches('.texted-form')) {
           event.preventDefault();
           submitWithoutReload(form);
           return;

@@ -72,7 +72,6 @@ PRIVACY_NOTICE_VERSION = "2026-09-13"
 CLINIC_DAYS = {0, 2, 4}  # Monday, Wednesday, Friday
 VALID_CATEGORIES = {"Regular", "PWD", "Senior Citizen", "Pregnant Woman"}
 VALID_GENDERS = {"Female", "Male", "Others"}
-VALID_CONTACT_STATUSES = {"Texted"}
 BARANGAYS = [
     "Andal Alino (Pob.)",
     "Bagong Sikat",
@@ -2085,7 +2084,7 @@ def appointments():
         SELECT *
         FROM client_requests
         WHERE status='Waiting for schedule'
-        ORDER BY created_at DESC, id DESC
+        ORDER BY created_at ASC, id ASC
         """
     ).fetchall()
     next_waiting_request = db().execute(
@@ -2162,46 +2161,42 @@ def appointments_live_version():
     return {"version": version}
 
 
-@app.post("/admin/appointments/<int:appointment_id>/contact-status")
+@app.post("/admin/appointments/<int:appointment_id>/texted")
 @roles_required("admin", "scheduler")
-def record_client_contact(appointment_id):
-    """Record a staff text update, then reload the approved-client page."""
-    contact_method = request.form.get("contact_status", "")
-    if contact_method not in VALID_CONTACT_STATUSES:
-        flash("Choose Texted when recording client contact.", "error")
+def mark_client_texted(appointment_id):
+    """Mark an approved appointment as texted."""
+    background_request = request.headers.get("X-Requested-With") == "XMLHttpRequest"
+
+    def result(message, error=False):
+        if background_request:
+            return {"ok": not error, "message": message}, 400 if error else 200
+        flash(message, "error" if error else "success")
         return redirect(url_for("appointments", section="approved"))
 
-    method_column = "texted"
     database = db()
     appointment = database.execute(
-        f"SELECT id, status, {method_column} FROM appointments WHERE id=?", (appointment_id,)
+        "SELECT id, status, texted FROM appointments WHERE id=?", (appointment_id,)
     ).fetchone()
     if not appointment:
-        flash("Appointment not found.", "error")
-    elif appointment["status"] != "Approved":
-        flash("Contact tracking is available only for approved appointments.", "error")
-    elif appointment[method_column]:
-        flash(f"This client is already marked as {contact_method.lower()}.", "success")
-    else:
-        database.execute(
-            f"UPDATE appointments SET {method_column}=1, updated_at=CURRENT_TIMESTAMP WHERE id=?",
-            (appointment_id,),
-        )
-        record_appointment_history(
-            appointment_id,
-            "Client contact recorded",
-            old_status=appointment["status"],
-            new_status=appointment["status"],
-            notes=f"Contact method: {contact_method}.",
-        )
-        audit(
-            "client_contact_recorded",
-            appointment_id=appointment_id,
-            details=f"method={contact_method}",
-        )
-        database.commit()
-        flash(f"Client marked as {contact_method.lower()}.", "success")
-    return redirect(url_for("appointments", section="approved"))
+        return result("Appointment not found.", error=True)
+    if appointment["status"] != "Approved":
+        return result("Only approved appointments can be marked as texted.", error=True)
+    if appointment["texted"]:
+        return result("Texted is already marked.")
+
+    database.execute(
+        "UPDATE appointments SET texted=1, updated_at=CURRENT_TIMESTAMP WHERE id=?",
+        (appointment_id,),
+    )
+    record_appointment_history(
+        appointment_id,
+        "Texted",
+        old_status=appointment["status"],
+        new_status=appointment["status"],
+    )
+    audit("client_texted", appointment_id=appointment_id)
+    database.commit()
+    return result("Texted")
 
 
 @app.post("/admin/appointments/<int:appointment_id>/manage")
