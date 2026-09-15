@@ -203,8 +203,73 @@ class SchedulingSystemTests(unittest.TestCase):
             appointment = scheduling_app.db().execute(
                 "SELECT called, registration_mode FROM appointments WHERE first_name='Called'"
             ).fetchone()
+            history_actions = [
+                row["action"]
+                for row in scheduling_app.db().execute(
+                    "SELECT action FROM appointment_history WHERE appointment_id=(SELECT id FROM appointments WHERE first_name='Called') ORDER BY id"
+                ).fetchall()
+            ]
         self.assertEqual(appointment["called"], 1)
         self.assertEqual(appointment["registration_mode"], "Online")
+        self.assertEqual(history_actions, ["Scheduled", "Called"])
+
+    def test_priority_clients_are_first_and_every_pending_client_can_be_scheduled(self):
+        appointment_date = self.next_monday()
+        with scheduling_app.app.app_context():
+            database = scheduling_app.db()
+            for code, last_name, category, phone in (
+                ("REGULAR-FIRST", "Regular", "Regular", "09170000011"),
+                ("SENIOR-LATER", "Senior", "Senior Citizen", "09170000012"),
+                ("PWD-LATER", "Pwd", "PWD", "09170000013"),
+            ):
+                database.execute(
+                    """
+                    INSERT INTO client_requests (
+                        request_code, last_name, first_name, birth_date, gender, barangay,
+                        category, contact_number, contact_key, privacy_consent
+                    ) VALUES (?, ?, 'Client', '1990-01-01', 'Others', ?, ?, ?, ?, 1)
+                    """,
+                    (code, last_name, scheduling_app.BARANGAYS[0], category, phone, phone),
+                )
+            senior_id = database.execute(
+                "SELECT id FROM client_requests WHERE request_code='SENIOR-LATER'"
+            ).fetchone()["id"]
+            database.commit()
+        self.sign_in_as_scheduler()
+
+        page = self.client.get("/admin/appointments?section=pending")
+        self.assertLess(page.data.find(b"Senior, Client"), page.data.find(b"Pwd, Client"))
+        self.assertLess(page.data.find(b"Pwd, Client"), page.data.find(b"Regular, Client"))
+
+        response = self.client.post(
+            f"/admin/requests/{senior_id}/schedule",
+            data={"appointment_date": appointment_date.isoformat(), "appointment_time": "08:00"},
+            follow_redirects=True,
+        )
+        self.assertIn(b"Client schedule assigned successfully.", response.data)
+
+    def test_rescheduling_needs_no_reason_and_keeps_notes_available(self):
+        appointment_date = self.next_monday()
+        appointment_id = self.insert_appointment(appointment_date, "08:00", "Approved")
+        self.sign_in_as_scheduler()
+
+        response = self.client.post(
+            f"/admin/appointments/{appointment_id}/manage",
+            data={
+                "action": "reschedule",
+                "appointment_date": appointment_date.isoformat(),
+                "appointment_time": "08:15",
+                "staff_notes": "Client asked for a later time.",
+            },
+            follow_redirects=True,
+        )
+        self.assertIn(b"Appointment updated successfully.", response.data)
+        with scheduling_app.app.app_context():
+            appointment = scheduling_app.db().execute(
+                "SELECT appointment_time, staff_notes FROM appointments WHERE id=?", (appointment_id,)
+            ).fetchone()
+        self.assertEqual(appointment["appointment_time"], "08:15")
+        self.assertEqual(appointment["staff_notes"], "Client asked for a later time.")
 
     def test_rejected_online_request_is_kept_in_cancelled_records(self):
         with scheduling_app.app.app_context():

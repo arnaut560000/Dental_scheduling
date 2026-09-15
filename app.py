@@ -1901,23 +1901,6 @@ def schedule_request(request_id):
         flash("This client request is no longer waiting for a schedule.", "error")
         return redirect(url_for("appointments"))
 
-    first_waiting_request = db().execute(
-        """
-        SELECT id
-        FROM client_requests
-        WHERE status='Waiting for schedule'
-        ORDER BY created_at ASC, id ASC
-        LIMIT 1
-        """
-    ).fetchone()
-
-    if not first_waiting_request or first_waiting_request["id"] != request_id:
-        flash(
-            "Schedule the first client in the queue before scheduling later requests.",
-            "error",
-        )
-        return redirect(url_for("appointments"))
-
     appointment_date = request.form.get("appointment_date", "")
     appointment_time = request.form.get("appointment_time", "")
     daily_limit = clinic_configuration()["daily_limit"]
@@ -1943,24 +1926,6 @@ def schedule_request(request_id):
             if not fresh_request:
                 database.rollback()
                 flash("This request was already scheduled.", "error")
-                return redirect(url_for("appointments"))
-
-            first_waiting_request = database.execute(
-                """
-                SELECT id
-                FROM client_requests
-                WHERE status='Waiting for schedule'
-                ORDER BY created_at ASC, id ASC
-                LIMIT 1
-                """
-            ).fetchone()
-
-            if not first_waiting_request or first_waiting_request["id"] != request_id:
-                database.rollback()
-                flash(
-                    "Schedule the first client in the queue before scheduling later requests.",
-                    "error",
-                )
                 return redirect(url_for("appointments"))
 
             count = database.execute(
@@ -2021,10 +1986,15 @@ def schedule_request(request_id):
                 new_date=appointment_date,
                 new_time=appointment_time,
                 notes=(
-                    "Appointment created from an online first-come-first-served queue. "
-                    "Mode of registration: Online. "
-                    "Called was recorded when the appointment was approved."
+                    "Appointment created from the online priority queue. "
+                    "Mode of registration: Online."
                 ),
+            )
+            record_appointment_history(
+                appointment_id,
+                "Called",
+                new_status="Approved",
+                notes="Recorded automatically when the appointment was approved.",
             )
             audit(
                 "client_scheduled",
@@ -2135,9 +2105,14 @@ def add_manual_appointment():
                     new_date=fields["appointment_date"],
                     new_time=fields["appointment_time"],
                     notes=(
-                        f"Mode of registration: {fields['registration_mode']}. "
-                        "Called was recorded when the appointment was approved."
+                        f"Mode of registration: {fields['registration_mode']}."
                     ),
+                )
+                record_appointment_history(
+                    appointment_id,
+                    "Called",
+                    new_status="Approved",
+                    notes="Recorded automatically when the appointment was approved.",
                 )
                 audit(
                     "client_added_manually",
@@ -2161,19 +2136,7 @@ def add_manual_appointment():
 @roles_required("admin", "scheduler")
 def reject_request(request_id):
     reason = request.form.get("reason", "").strip()
-    first_waiting_request = db().execute(
-        """
-        SELECT id
-        FROM client_requests
-        WHERE status='Waiting for schedule'
-        ORDER BY created_at ASC, id ASC
-        LIMIT 1
-        """
-    ).fetchone()
-
-    if not first_waiting_request or first_waiting_request["id"] != request_id:
-        flash("Only the first client in the queue can be rejected.", "error")
-    elif not reason:
+    if not reason:
         flash("Enter a reason before rejecting a client request.", "error")
     elif len(reason) > 500:
         flash("The rejection reason must be 500 characters or fewer.", "error")
@@ -2189,7 +2152,7 @@ def reject_request(request_id):
         if cursor.rowcount:
             audit("client_request_rejected", details=f"client_request_id={request_id}; reason={reason}")
             db().commit()
-            flash("Client request rejected. The next client is now first in the queue.", "success")
+            flash("Client request rejected and recorded in Cancelled records.", "success")
         else:
             db().rollback()
             flash("This client request is no longer waiting for a schedule.", "error")
@@ -2225,18 +2188,17 @@ def appointments():
         SELECT *
         FROM client_requests
         WHERE status='Waiting for schedule'
-        ORDER BY created_at ASC, id ASC
+        ORDER BY
+            CASE category
+                WHEN 'Senior Citizen' THEN 1
+                WHEN 'PWD' THEN 2
+                WHEN 'Pregnant Woman' THEN 3
+                ELSE 4
+            END,
+            created_at ASC,
+            id ASC
         """
     ).fetchall()
-    next_waiting_request = db().execute(
-        """
-        SELECT id
-        FROM client_requests
-        WHERE status='Waiting for schedule'
-        ORDER BY created_at ASC, id ASC
-        LIMIT 1
-        """
-    ).fetchone()
     rejected_requests = []
     rejected_request_count = db().execute(
         "SELECT COUNT(*) FROM client_requests WHERE status='Rejected'"
@@ -2266,7 +2228,6 @@ def appointments():
         "appointments.html",
         appointments=rows,
         waiting_requests=waiting_requests,
-        next_waiting_request_id=(next_waiting_request["id"] if next_waiting_request else None),
         client_section=client_section,
         section_counts=section_counts,
         selected_date=selected_date,
@@ -2365,7 +2326,7 @@ def manage_appointment(appointment_id):
     if len(reason) > 500 or len(staff_notes) > 2000:
         flash("Reasons must be 500 characters or fewer and staff notes 2,000 or fewer.", "error")
         return redirect(url_for("appointments"))
-    if action in {"cancelled", "no_show", "reschedule"} and not reason:
+    if action in {"cancelled", "no_show"} and not reason:
         flash("Enter a reason for this appointment action.", "error")
         return redirect(url_for("appointments"))
     if action == "notes" and not staff_notes:

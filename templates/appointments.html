@@ -36,7 +36,7 @@
         <div>
           <p class="eyebrow">PENDING REQUESTS</p>
           <h2>Waiting for schedule</h2>
-          <p class="notice">Earlier requests appear first. Newer requests are placed at the bottom of the queue.</p>
+          <p class="notice">Priority order: Senior Citizen, PWD, Pregnant Woman, then Regular. Earlier requests appear first within each group.</p>
         </div>
         <span class="section-count">{{ section_counts.pending }} in queue</span>
       </div>
@@ -48,17 +48,13 @@
           <tbody>
             {% for client_request in waiting_requests %}
               <tr>
-                <td><strong>{{ client_request.created_at }}</strong><br><span class="notice">{% if client_request.id == next_waiting_request_id %}Next to schedule{% else %}Waiting in queue{% endif %}</span></td>
+                <td><strong>{{ client_request.created_at }}</strong><br><span class="notice">{% if client_request.category in ['Senior Citizen', 'PWD', 'Pregnant Woman'] %}Priority client{% else %}Waiting in queue{% endif %}</span></td>
                 <td><strong>{{ client_request.last_name }}, {{ client_request.first_name }} {{ client_request.middle_initial }}</strong><br>{% if session.role == 'admin' %}{{ client_request.birth_date }} · {% endif %}{{ client_request.gender or 'Not recorded' }}</td>
                 <td><strong>{{ client_request.category }}</strong><br>{{ client_request.barangay }}</td>
                 <td>{{ client_request.contact_number }}{% if session.role == 'admin' and client_request.email %}<br>{{ client_request.email }}{% endif %}</td>
                 <td>
-                  {% if client_request.id == next_waiting_request_id %}
-                    <button class="small schedule-button" type="button" data-request-id="{{ client_request.id }}" data-client-name="{{ client_request.last_name }}, {{ client_request.first_name }} {{ client_request.middle_initial or '' }}">Schedule client</button>
-                    <button class="small secondary-button reject-button" type="button" data-request-id="{{ client_request.id }}" data-client-name="{{ client_request.last_name }}, {{ client_request.first_name }} {{ client_request.middle_initial or '' }}">Reject request</button>
-                  {% else %}
-                    <span class="notice">Earlier requests have priority</span>
-                  {% endif %}
+                  <button class="small schedule-button" type="button" data-request-id="{{ client_request.id }}" data-client-name="{{ client_request.last_name }}, {{ client_request.first_name }} {{ client_request.middle_initial or '' }}">Schedule client</button>
+                  <button class="small secondary-button reject-button" type="button" data-request-id="{{ client_request.id }}" data-client-name="{{ client_request.last_name }}, {{ client_request.first_name }} {{ client_request.middle_initial or '' }}">Reject request</button>
                 </td>
               </tr>
             {% endfor %}
@@ -97,7 +93,7 @@
           <div>
             <p class="eyebrow">APPROVED APPOINTMENTS</p>
             <h2>Approved appointments</h2>
-            <p class="notice">Click Texted after sending the appointment details. Use Manage for staff-only notes.</p>
+            <p class="notice">Click Texted after sending the appointment details. Use Manage for staff-only notes or rescheduling.</p>
           </div>
           <span class="section-count">{{ section_counts.approved }} approved</span>
         </div>
@@ -251,8 +247,18 @@
     </div>
     <form id="manage-form" method="post" class="appointment-form">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input id="manage-action" type="hidden" name="action" value="notes">
       <label>Staff-only notes<textarea id="manage-notes" name="staff_notes" maxlength="2000" placeholder="Internal notes: not visible to clients"></textarea></label>
-      <button type="submit">Save notes</button>
+      <div class="inline-actions">
+        <button type="submit" data-manage-action="notes">Save notes</button>
+        <button class="secondary-button" id="manage-reschedule-toggle" type="button">Reschedule appointment</button>
+      </div>
+      <div id="manage-reschedule-fields" class="form-grid" hidden>
+        <label>New appointment date<input id="manage-date" type="date" name="appointment_date" min="{{ today }}"></label>
+        <label>New available time<select id="manage-time" name="appointment_time" disabled><option value="">Choose a date first</option></select></label>
+        <div class="form-grid-full"><button type="submit" data-manage-action="reschedule">Save new schedule</button></div>
+      </div>
+      <p id="manage-help" class="notice"></p>
     </form>
   </dialog>
 
@@ -335,7 +341,13 @@
       const rejectForm = document.getElementById('reject-form');
       const manageModal = document.getElementById('manage-modal');
       const manageForm = document.getElementById('manage-form');
+      const manageAction = document.getElementById('manage-action');
       const manageNotes = document.getElementById('manage-notes');
+      const manageRescheduleToggle = document.getElementById('manage-reschedule-toggle');
+      const manageRescheduleFields = document.getElementById('manage-reschedule-fields');
+      const manageDate = document.getElementById('manage-date');
+      const manageTime = document.getElementById('manage-time');
+      const manageHelp = document.getElementById('manage-help');
       const addClientModal = document.getElementById('add-client-modal');
       const addClientForm = document.getElementById('add-client-form');
       const addClientDate = document.getElementById('add-client-date');
@@ -500,10 +512,33 @@
           manageForm.action = `/admin/appointments/${currentAppointment.appointmentId}/manage`;
           document.getElementById('manage-client').textContent = `${currentAppointment.clientName.trim()} · ${currentAppointment.date} ${formatTime(currentAppointment.time)}`;
           manageNotes.value = currentAppointment.notes || '';
+          manageAction.value = 'notes';
+          manageRescheduleFields.hidden = true;
+          manageDate.value = '';
+          manageTime.disabled = true;
+          manageTime.innerHTML = '<option value="">Choose a date first</option>';
+          manageHelp.textContent = '';
+          manageRescheduleToggle.hidden = !['Pending', 'Approved'].includes(currentAppointment.status);
           manageModal.showModal();
         });
         });
       }
+      manageRescheduleToggle.addEventListener('click', function () {
+        manageRescheduleFields.hidden = !manageRescheduleFields.hidden;
+        if (!manageRescheduleFields.hidden) {
+          manageHelp.textContent = 'Choose a new available clinic date and time.';
+          manageDate.focus();
+        } else {
+          manageDate.value = '';
+          manageTime.disabled = true;
+          manageTime.innerHTML = '<option value="">Choose a date first</option>';
+          manageHelp.textContent = '';
+        }
+      });
+      manageDate.addEventListener('change', function () { populateTimes(manageDate, manageTime, manageHelp); });
+      manageForm.addEventListener('submit', function (event) {
+        manageAction.value = (event.submitter && event.submitter.dataset.manageAction) || 'notes';
+      });
       document.getElementById('manage-close').addEventListener('click', function () { manageModal.close(); });
 
       function bindAddClientButton() {
