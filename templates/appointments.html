@@ -127,17 +127,20 @@
                   <td>{{ appointment.contact_number }}{% if session.role == 'admin' and appointment.email %}<br>{{ appointment.email }}{% endif %}</td>
                   <td>
                     <span class="badge approved">Approved</span><br>
-                    <span class="contact-status">{{ appointment.contact_status }}</span>
+                    <span class="contact-status" aria-label="Client contact status">
+                      <span class="contact-state {% if appointment.texted %}recorded{% endif %}">Texted: {% if appointment.texted %}Recorded{% else %}Not yet{% endif %}</span>
+                      <span class="contact-state {% if appointment.called %}recorded{% endif %}">Called: {% if appointment.called %}Recorded{% else %}Not yet{% endif %}</span>
+                    </span>
                   </td>
                   <td>
                     <div class="inline-actions">
                       <form method="post" action="{{ url_for('record_client_contact', appointment_id=appointment.id) }}">
                         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                        <button class="small secondary-button" type="submit" name="contact_status" value="Texted" {% if 'Texted' in appointment.contact_status %}disabled{% endif %}>Texted</button>
+                        <button class="small secondary-button" type="submit" name="contact_status" value="Texted" {% if appointment.texted %}disabled{% endif %}>Texted</button>
                       </form>
                       <form method="post" action="{{ url_for('record_client_contact', appointment_id=appointment.id) }}">
                         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                        <button class="small secondary-button" type="submit" name="contact_status" value="Called" {% if appointment.contact_status == 'Called' %}disabled{% endif %}>Called</button>
+                        <button class="small secondary-button" type="submit" name="contact_status" value="Called" {% if appointment.called %}disabled{% endif %}>Called</button>
                       </form>
                       <button class="small manage-button" type="button" data-appointment-id="{{ appointment.id }}" data-client-name="{{ appointment.last_name }}, {{ appointment.first_name }} {{ appointment.middle_initial or '' }}" data-status="{{ appointment.status }}" data-date="{{ appointment.appointment_date }}" data-time="{{ appointment.appointment_time }}" data-notes="{{ appointment.staff_notes or '' }}">Manage</button>
                       <button class="small secondary-button history-button" type="button" data-appointment-id="{{ appointment.id }}" data-client-name="{{ appointment.last_name }}, {{ appointment.first_name }} {{ appointment.middle_initial or '' }}">History</button>

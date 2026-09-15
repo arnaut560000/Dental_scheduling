@@ -288,9 +288,9 @@ td, th { padding: 11px 8px; border-bottom: 1px solid var(--line); }
 .section-summary .notice { max-width: 720px; margin: 0; }
 .section-count { flex: 0 0 auto; padding: 7px 10px; border-radius: 999px; background: #e4f3ef; color: #176d5e; font-size: 12px; font-weight: 800; }
 .section-follow-up { margin-top: 22px; }
-.contact-status { display: inline-block; margin-top: 5px; color: #58706d; font-size: 12px; font-weight: 700; }
-.contact-status.texted { color: #705018; }
-.contact-status.called { color: #176d5e; }
+.contact-status { display: grid; gap: 3px; margin-top: 5px; color: #718481; font-size: 12px; font-weight: 700; }
+.contact-state { display: block; }
+.contact-state.recorded { color: #176d5e; }
 .inline-actions { display: flex; flex-wrap: wrap; gap: 5px; min-width: 208px; }
 .inline-actions form { margin: 0; }
 .inline-actions .small { margin: 0; }

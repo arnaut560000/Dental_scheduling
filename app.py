@@ -246,7 +246,9 @@ def create_postgres_schema(database):
             contact_number TEXT NOT NULL, contact_key TEXT, email TEXT,
             appointment_date TEXT NOT NULL, appointment_time TEXT NOT NULL,
             status TEXT NOT NULL DEFAULT 'Pending', status_reason TEXT,
-            staff_notes TEXT, contact_status TEXT NOT NULL DEFAULT 'Not contacted', updated_at TIMESTAMPTZ,
+            staff_notes TEXT, contact_status TEXT NOT NULL DEFAULT 'Not contacted',
+            texted INTEGER NOT NULL DEFAULT 0, called INTEGER NOT NULL DEFAULT 0,
+            updated_at TIMESTAMPTZ,
             created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
         )
         """,
@@ -327,7 +329,9 @@ def apply_initial_schema(database):
             contact_number TEXT NOT NULL, contact_key TEXT, email TEXT, appointment_date TEXT NOT NULL,
             appointment_time TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'Pending',
             status_reason TEXT, staff_notes TEXT,
-            contact_status TEXT NOT NULL DEFAULT 'Not contacted', updated_at TEXT,
+            contact_status TEXT NOT NULL DEFAULT 'Not contacted',
+            texted INTEGER NOT NULL DEFAULT 0, called INTEGER NOT NULL DEFAULT 0,
+            updated_at TEXT,
             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
         );
         CREATE TABLE IF NOT EXISTS client_requests (
@@ -464,6 +468,7 @@ ACTIVE_SLOT_MIGRATION = "002_active_appointment_slots"
 CLINIC_CONFIGURATION_MIGRATION = "003_clinic_configuration"
 PRIVACY_CONSENT_MIGRATION = "004_privacy_consent_version"
 CONTACT_STATUS_MIGRATION = "005_appointment_contact_status"
+CONTACT_METHOD_FLAGS_MIGRATION = "006_appointment_contact_method_flags"
 
 DEFAULT_CLINIC_SETTINGS = {
     "clinic_days": "0,2,4",
@@ -624,6 +629,27 @@ def migrate_appointment_contact_status(database):
         )
 
 
+def migrate_appointment_contact_method_flags(database):
+    """Store Texted and Called independently, preserving older contact records."""
+    columns = table_columns(database, "appointments")
+    if "texted" not in columns:
+        database.execute(
+            "ALTER TABLE appointments ADD COLUMN texted INTEGER NOT NULL DEFAULT 0"
+        )
+    if "called" not in columns:
+        database.execute(
+            "ALTER TABLE appointments ADD COLUMN called INTEGER NOT NULL DEFAULT 0"
+        )
+    database.execute(
+        "UPDATE appointments SET texted=1 WHERE texted=0 AND contact_status LIKE ?",
+        ("%Texted%",),
+    )
+    database.execute(
+        "UPDATE appointments SET called=1 WHERE called=0 AND contact_status LIKE ?",
+        ("%Called%",),
+    )
+
+
 def clinic_configuration():
     """Return validated scheduling settings, cached for the current request."""
     if "clinic_configuration" in g:
@@ -746,6 +772,10 @@ def init_db():
         if CONTACT_STATUS_MIGRATION not in completed:
             migrate_appointment_contact_status(database)
             record_migration(database, CONTACT_STATUS_MIGRATION)
+            completed.add(CONTACT_STATUS_MIGRATION)
+        if CONTACT_METHOD_FLAGS_MIGRATION not in completed:
+            migrate_appointment_contact_method_flags(database)
+            record_migration(database, CONTACT_METHOD_FLAGS_MIGRATION)
     finally:
         if locked:
             database.execute("SELECT pg_advisory_unlock(83742619)")
@@ -2091,58 +2121,42 @@ def appointments():
 @app.post("/admin/appointments/<int:appointment_id>/contact-status")
 @roles_required("admin", "scheduler")
 def record_client_contact(appointment_id):
-    """Record the latest scheduling contact method without changing the appointment."""
-    contact_status = request.form.get("contact_status", "")
-    if contact_status not in VALID_CONTACT_STATUSES:
+    """Record Texted and Called separately, then reload the approved-client page."""
+    contact_method = request.form.get("contact_status", "")
+    if contact_method not in VALID_CONTACT_STATUSES:
         flash("Choose Texted or Called when recording client contact.", "error")
         return redirect(url_for("appointments", section="approved"))
 
+    method_column = {"Texted": "texted", "Called": "called"}[contact_method]
     database = db()
     appointment = database.execute(
-        "SELECT id, status, contact_status FROM appointments WHERE id=?", (appointment_id,)
+        f"SELECT id, status, {method_column} FROM appointments WHERE id=?", (appointment_id,)
     ).fetchone()
     if not appointment:
         flash("Appointment not found.", "error")
     elif appointment["status"] != "Approved":
         flash("Contact tracking is available only for approved appointments.", "error")
+    elif appointment[method_column]:
+        flash(f"This client is already marked as {contact_method.lower()}.", "success")
     else:
-        current_methods = (
-            set()
-            if appointment["contact_status"] == "Not contacted"
-            else {
-                method.strip()
-                for method in appointment["contact_status"].split(",")
-                if method.strip()
-            }
-        )
-
-        if contact_status in current_methods:
-            flash(f"This client is already marked as {contact_status.lower()}.", "success")
-            return redirect(url_for("appointments", section="approved"))
-
-        current_methods.add(contact_status)
-        updated_contact_status = ", ".join(
-            method for method in ("Texted", "Called") if method in current_methods
-        )
-
         database.execute(
-            "UPDATE appointments SET contact_status=?, updated_at=CURRENT_TIMESTAMP WHERE id=?",
-            (updated_contact_status, appointment_id),
+            f"UPDATE appointments SET {method_column}=1, updated_at=CURRENT_TIMESTAMP WHERE id=?",
+            (appointment_id,),
         )
         record_appointment_history(
             appointment_id,
             "Client contact recorded",
             old_status=appointment["status"],
             new_status=appointment["status"],
-            notes=f"Contact method: {contact_status}.",
+            notes=f"Contact method: {contact_method}.",
         )
         audit(
             "client_contact_recorded",
             appointment_id=appointment_id,
-            details=f"method={contact_status}",
+            details=f"method={contact_method}",
         )
         database.commit()
-        flash(f"Client marked as {contact_status.lower()}.", "success")
+        flash(f"Client marked as {contact_method.lower()}.", "success")
     return redirect(url_for("appointments", section="approved"))
 
 

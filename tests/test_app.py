@@ -170,15 +170,34 @@ class SchedulingSystemTests(unittest.TestCase):
         self.assertIn(b"Client marked as called.", response.data)
         with scheduling_app.app.app_context():
             appointment = scheduling_app.db().execute(
-                "SELECT contact_status FROM appointments WHERE id=?", (appointment_id,)
+                "SELECT texted, called FROM appointments WHERE id=?", (appointment_id,)
             ).fetchone()
             history = scheduling_app.db().execute(
                 "SELECT action, notes FROM appointment_history WHERE appointment_id=? ORDER BY id DESC",
                 (appointment_id,),
             ).fetchone()
-        self.assertEqual(appointment["contact_status"], "Texted, Called")
+        self.assertEqual(appointment["texted"], 1)
+        self.assertEqual(appointment["called"], 1)
         self.assertEqual(history["action"], "Client contact recorded")
         self.assertEqual(history["notes"], "Contact method: Called.")
+
+    def test_contact_method_migration_preserves_existing_contact_records(self):
+        appointment_id = self.insert_appointment(
+            self.next_monday(), "08:00", "Approved"
+        )
+        with scheduling_app.app.app_context():
+            database = scheduling_app.db()
+            database.execute(
+                "UPDATE appointments SET contact_status='Texted, Called', texted=0, called=0 WHERE id=?",
+                (appointment_id,),
+            )
+            scheduling_app.migrate_appointment_contact_method_flags(database)
+            database.commit()
+            appointment = database.execute(
+                "SELECT texted, called FROM appointments WHERE id=?", (appointment_id,)
+            ).fetchone()
+        self.assertEqual(appointment["texted"], 1)
+        self.assertEqual(appointment["called"], 1)
 
     def test_client_sections_show_only_their_matching_records(self):
         appointment_date = self.next_monday()
@@ -365,12 +384,15 @@ class SchedulingSystemTests(unittest.TestCase):
         self.assertIn(scheduling_app.CLINIC_CONFIGURATION_MIGRATION, versions)
         self.assertIn(scheduling_app.PRIVACY_CONSENT_MIGRATION, versions)
         self.assertIn(scheduling_app.CONTACT_STATUS_MIGRATION, versions)
+        self.assertIn(scheduling_app.CONTACT_METHOD_FLAGS_MIGRATION, versions)
 
         with scheduling_app.app.app_context():
             appointment_columns = scheduling_app.table_columns(
                 scheduling_app.db(), "appointments"
             )
         self.assertIn("contact_status", appointment_columns)
+        self.assertIn("texted", appointment_columns)
+        self.assertIn("called", appointment_columns)
 
         with scheduling_app.app.app_context():
             settings = {
