@@ -2368,9 +2368,7 @@ def manage_appointment(appointment_id):
     action = request.form.get("action", "notes")
     reason = request.form.get("reason", "").strip()
     staff_notes = request.form.get("staff_notes", "").strip()
-    appointment_date = request.form.get("appointment_date", "")
-    appointment_time = request.form.get("appointment_time", "")
-    allowed_actions = {"notes", "finished", "cancelled", "no_show", "reschedule"}
+    allowed_actions = {"notes", "finished", "cancelled", "no_show"}
 
     if action not in allowed_actions:
         flash("Choose a valid appointment action.", "error")
@@ -2409,7 +2407,6 @@ def manage_appointment(appointment_id):
             "finished": "Marked finished",
             "cancelled": "Cancelled",
             "no_show": "No-show marked",
-            "reschedule": "Rescheduled",
         }[action]
 
         if action == "finished":
@@ -2418,41 +2415,6 @@ def manage_appointment(appointment_id):
             new_status, new_reason = "Cancelled", reason
         elif action == "no_show":
             new_status, new_reason = "No-show", reason
-        elif action == "reschedule":
-            if (
-                not valid_clinic_date(appointment_date)
-                or appointment_time not in configured_slot_times()
-            ):
-                database.rollback()
-                flash("Choose an available future clinic date and time.", "error")
-                return redirect(url_for("appointments"))
-            same_slot = database.execute(
-                """
-                SELECT 1 FROM appointments
-                WHERE appointment_date=? AND appointment_time=? AND id<>?
-                  AND status IN ('Pending', 'Approved')
-                """,
-                (appointment_date, appointment_time, appointment_id),
-            ).fetchone()
-            daily_count = database.execute(
-                """
-                SELECT COUNT(*) FROM appointments
-                WHERE appointment_date=? AND id<>?
-                  AND status IN ('Pending', 'Approved')
-                """,
-                (appointment_date, appointment_id),
-            ).fetchone()[0]
-            if same_slot or daily_count >= clinic_configuration()["daily_limit"]:
-                database.rollback()
-                flash("That new schedule is no longer available.", "error")
-                return redirect(url_for("appointments"))
-            new_date, new_time, new_status, new_reason = (
-                appointment_date,
-                appointment_time,
-                "Approved",
-                reason,
-            )
-
         database.execute(
             """
             UPDATE appointments

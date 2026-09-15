@@ -273,8 +273,9 @@ class SchedulingSystemTests(unittest.TestCase):
         page = self.client.get("/admin/appointments?section=approved")
         self.assertNotIn(blocked_date.encode(), page.data)
         self.assertIn(b"Choose a clinic date", page.data)
-        self.assertIn(b">Reschedule</button>", page.data)
+        self.assertNotIn(b">Reschedule</button>", page.data)
         self.assertNotIn(b">Manage</button>", page.data)
+        self.assertNotIn(b">Notes</button>", page.data)
         with scheduling_app.app.test_request_context("/admin/appointments"):
             dates = scheduling_app.selectable_clinic_dates()
         self.assertTrue(dates)
@@ -282,29 +283,6 @@ class SchedulingSystemTests(unittest.TestCase):
             date.fromisoformat(item["value"]).weekday() in {0, 2, 4}
             for item in dates
         ))
-
-    def test_rescheduling_needs_no_reason_and_keeps_notes_available(self):
-        appointment_date = self.next_monday()
-        appointment_id = self.insert_appointment(appointment_date, "08:00", "Approved")
-        self.sign_in_as_scheduler()
-
-        response = self.client.post(
-            f"/admin/appointments/{appointment_id}/manage",
-            data={
-                "action": "reschedule",
-                "appointment_date": appointment_date.isoformat(),
-                "appointment_time": "08:15",
-                "staff_notes": "Client asked for a later time.",
-            },
-            follow_redirects=True,
-        )
-        self.assertIn(b"Appointment updated successfully.", response.data)
-        with scheduling_app.app.app_context():
-            appointment = scheduling_app.db().execute(
-                "SELECT appointment_time, staff_notes FROM appointments WHERE id=?", (appointment_id,)
-            ).fetchone()
-        self.assertEqual(appointment["appointment_time"], "08:15")
-        self.assertEqual(appointment["staff_notes"], "Client asked for a later time.")
 
     def test_rejected_online_request_is_kept_in_cancelled_records(self):
         with scheduling_app.app.app_context():
@@ -341,6 +319,27 @@ class SchedulingSystemTests(unittest.TestCase):
         cancelled_page = self.client.get("/admin/appointments?section=cancelled")
         self.assertIn(b"Rejected, Online", cancelled_page.data)
         self.assertIn(b"No appointment slots are available today.", cancelled_page.data)
+
+    def test_rescheduling_is_not_an_available_appointment_action(self):
+        appointment_date = self.next_monday()
+        appointment_id = self.insert_appointment(appointment_date, "08:00", "Approved")
+        self.sign_in_as_scheduler()
+
+        response = self.client.post(
+            f"/admin/appointments/{appointment_id}/manage",
+            data={
+                "action": "reschedule",
+                "appointment_date": appointment_date.isoformat(),
+                "appointment_time": "08:15",
+            },
+            follow_redirects=True,
+        )
+        self.assertIn(b"Choose a valid appointment action.", response.data)
+        with scheduling_app.app.app_context():
+            appointment = scheduling_app.db().execute(
+                "SELECT appointment_time FROM appointments WHERE id=?", (appointment_id,)
+            ).fetchone()
+        self.assertEqual(appointment["appointment_time"], "08:00")
 
     def test_staff_can_add_an_approved_client_with_registration_mode(self):
         appointment_date = self.next_monday()
