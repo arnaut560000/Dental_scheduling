@@ -2126,8 +2126,8 @@ def record_client_contact(appointment_id):
         )
 
         database.execute(
-            "UPDATE appointments SET contact_status=?, update_at=CURRENT_TIMESTAMP WHERE id=?",
-            (update_contact_status, appointment_id),
+            "UPDATE appointments SET contact_status=?, updated_at=CURRENT_TIMESTAMP WHERE id=?",
+            (updated_contact_status, appointment_id),
         )
         record_appointment_history(
             appointment_id,

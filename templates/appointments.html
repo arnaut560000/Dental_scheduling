@@ -133,7 +133,7 @@
                     <div class="inline-actions">
                       <form method="post" action="{{ url_for('record_client_contact', appointment_id=appointment.id) }}">
                         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                        <button class="small secondary-button" type="submit" name="contact_status" value="Called" {% if 'Called' in appointment.contact_status %}disabled{% endif %}>Called</button>
+                        <button class="small secondary-button" type="submit" name="contact_status" value="Texted" {% if 'Texted' in appointment.contact_status %}disabled{% endif %}>Texted</button>
                       </form>
                       <form method="post" action="{{ url_for('record_client_contact', appointment_id=appointment.id) }}">
                         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">

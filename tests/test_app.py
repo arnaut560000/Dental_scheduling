@@ -160,16 +160,25 @@ class SchedulingSystemTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertIn(b"Client marked as texted.", response.data)
+        response = self.client.post(
+            f"/admin/appointments/{appointment_id}/contact-status",
+            data={"contact_status": "Called"},
+            follow_redirects=True,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b"Client marked as called.", response.data)
         with scheduling_app.app.app_context():
             appointment = scheduling_app.db().execute(
                 "SELECT contact_status FROM appointments WHERE id=?", (appointment_id,)
             ).fetchone()
             history = scheduling_app.db().execute(
-                "SELECT action, notes FROM appointment_history WHERE appointment_id=?", (appointment_id,)
+                "SELECT action, notes FROM appointment_history WHERE appointment_id=? ORDER BY id DESC",
+                (appointment_id,),
             ).fetchone()
-        self.assertEqual(appointment["contact_status"], "Texted")
+        self.assertEqual(appointment["contact_status"], "Texted, Called")
         self.assertEqual(history["action"], "Client contact recorded")
-        self.assertEqual(history["notes"], "Contact method: Texted.")
+        self.assertEqual(history["notes"], "Contact method: Called.")
 
     def test_client_sections_show_only_their_matching_records(self):
         appointment_date = self.next_monday()
