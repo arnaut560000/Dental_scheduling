@@ -759,7 +759,7 @@ def inject_clinic_schedule_summary():
             f"{configuration['daily_limit']} clients per day"
         ),
         "share_url": f"{public_url}{url_for('request_appointment')}",
-        "social_image_url": f"{public_url}{url_for('static', filename='edental-link-preview.png')}",
+        "social_image_url": f"{public_url}{url_for('static', filename='edental-link-preview-v2.png')}",
     }
 
 
