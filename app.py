@@ -1190,11 +1190,11 @@ def analytics_pdf_report(analytics):
     ]
     metric_table = Table(metrics, colWidths=[95 * mm, 75 * mm])
     metric_table.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#167B68")),
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1854B7")),
         ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
         ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-        ("GRID", (0, 0), (-1, -1), 0.25, colors.HexColor("#D9E5E1")),
-        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#EDF7F4")]),
+        ("GRID", (0, 0), (-1, -1), 0.25, colors.HexColor("#C9D8F4")),
+        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#EDF3FF")]),
         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
         ("TOPPADDING", (0, 0), (-1, -1), 6),
         ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
@@ -1207,11 +1207,11 @@ def analytics_pdf_report(analytics):
         trend_rows.append(["No data", "0", "0"])
     trend_table = Table(trend_rows, colWidths=[80 * mm, 45 * mm, 45 * mm])
     trend_table.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#173B3A")),
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#0B2D6E")),
         ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
         ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-        ("GRID", (0, 0), (-1, -1), 0.25, colors.HexColor("#D9E5E1")),
-        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#EDF7F4")]),
+        ("GRID", (0, 0), (-1, -1), 0.25, colors.HexColor("#C9D8F4")),
+        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#FFF8D6")]),
         ("ALIGN", (1, 1), (-1, -1), "RIGHT"),
         ("TOPPADDING", (0, 0), (-1, -1), 6),
         ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
