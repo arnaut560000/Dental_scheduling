@@ -449,6 +449,8 @@ class SchedulingSystemTests(unittest.TestCase):
         older_marker = f'data-appointment-id="{older_appointment}"'.encode()
         self.assertLess(approved_page.data.find(newer_marker), approved_page.data.find(older_marker))
         self.assertLess(pending_page.data.find(b"Older, Client"), pending_page.data.find(b"Newer, Client"))
+        self.assertNotIn(b">Submitted</th>", pending_page.data)
+        self.assertNotIn(b"Waiting in queue", pending_page.data)
 
     def test_daily_request_limit_closes_the_public_form_and_blocks_submissions(self):
         with scheduling_app.app.app_context():

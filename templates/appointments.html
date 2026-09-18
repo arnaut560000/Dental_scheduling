@@ -43,12 +43,11 @@
       {% if waiting_requests %}
         <table class="wide">
           <thead>
-            <tr><th>Submitted</th><th>Client</th><th>Sector and address</th><th>Contact</th><th>Next action</th></tr>
+            <tr><th>Client</th><th>Sector and address</th><th>Contact</th><th>Actions</th></tr>
           </thead>
           <tbody>
             {% for client_request in waiting_requests %}
               <tr>
-                <td><strong>{{ client_request.created_at }}</strong><br><span class="notice">Waiting in queue</span></td>
                 <td><strong>{{ client_request.last_name }}, {{ client_request.first_name }} {{ client_request.middle_initial }}</strong><br>{% if session.role == 'admin' %}{{ client_request.birth_date }} · {% endif %}{{ client_request.gender or 'Not recorded' }}</td>
                 <td><strong>{{ client_request.category }}</strong><br>{{ client_request.barangay }}</td>
                 <td>{{ client_request.contact_number }}{% if session.role == 'admin' and client_request.email %}<br>{{ client_request.email }}{% endif %}</td>
