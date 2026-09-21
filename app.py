@@ -793,6 +793,13 @@ def init_db():
         database.execute("SELECT pg_advisory_lock(83742619)")
         locked = True
     try:
+        # Migration records remain after an administrator accidentally removes a
+        # table in Supabase. Re-run the idempotent PostgreSQL base schema here so
+        # a missing client table is recreated instead of leaving the site down.
+        # Existing tables and records are never changed by these statements.
+        if using_postgres(database):
+            create_postgres_schema(database)
+            database.commit()
         completed = applied_migrations(database)
         if INITIAL_SCHEMA_MIGRATION not in completed:
             apply_initial_schema(database)
