@@ -1,6 +1,6 @@
-# SmileCare Scheduling
+# Talavera E-dental Scheduling
 
-SmileCare is a clinic request and staff-scheduling system for free tooth-removal assistance. Clients submit their details and consent to the Privacy Notice. Staff schedule clients in strict first-come-first-served order, then manage reschedules, cancellations, no-shows, notes, and history.
+Talavera E-dental is a clinic request and staff-scheduling system for free tooth-removal assistance. Clients submit their details and consent to the Privacy Notice. Staff schedule clients in strict first-come-first-served order, then manage reschedules, cancellations, no-shows, notes, and history.
 
 ## Included workflow
 
