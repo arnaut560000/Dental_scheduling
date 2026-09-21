@@ -44,10 +44,10 @@
         </div>
       </div>
       <div class="form-grid">
-        <label>Last name*<input name="last_name" maxlength="80" required value="{{ request.form.last_name }}"></label>
-        <label>First name*<input name="first_name" maxlength="80" required value="{{ request.form.first_name }}"></label>
-        <label>Middle initial<input name="middle_initial" maxlength="5" value="{{ request.form.middle_initial }}"></label>
-        <label>Birth date*<input type="date" name="birth_date" required value="{{ request.form.birth_date }}"></label>
+        <label>Last name*<input name="last_name" maxlength="80" inputmode="text" autocomplete="family-name" required value="{{ request.form.last_name }}" oninput="this.value = this.value.replace(/[0-9]/g, '')"></label>
+        <label>First name*<input name="first_name" maxlength="80" inputmode="text" autocomplete="given-name" required value="{{ request.form.first_name }}" oninput="this.value = this.value.replace(/[0-9]/g, '')"></label>
+        <label>Middle initial<input name="middle_initial" maxlength="5" inputmode="text" autocomplete="additional-name" value="{{ request.form.middle_initial }}" oninput="this.value = this.value.replace(/[0-9]/g, '')"></label>
+        <label>Birth date*<input type="date" name="birth_date" max="{{ today }}" required value="{{ request.form.birth_date }}"></label>
         <fieldset class="choice-group gender-group">
           <legend>Gender*</legend>
           <div class="option-list gender-options">

@@ -250,10 +250,10 @@
     <form id="add-client-form" method="post" action="{{ url_for('add_manual_appointment') }}" class="appointment-form">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <div class="form-grid">
-        <label>Last name<input name="last_name" maxlength="80" required></label>
-        <label>First name<input name="first_name" maxlength="80" required></label>
-        <label>Middle initial<input name="middle_initial" maxlength="10"></label>
-        <label>Birth date<input name="birth_date" type="date" required></label>
+        <label>Last name<input name="last_name" maxlength="80" inputmode="text" required oninput="this.value = this.value.replace(/[0-9]/g, '')"></label>
+        <label>First name<input name="first_name" maxlength="80" inputmode="text" required oninput="this.value = this.value.replace(/[0-9]/g, '')"></label>
+        <label>Middle initial<input name="middle_initial" maxlength="10" inputmode="text" oninput="this.value = this.value.replace(/[0-9]/g, '')"></label>
+        <label>Birth date<input name="birth_date" type="date" max="{{ today }}" required></label>
         <label>Gender
           <select name="gender" required>
             <option value="">Choose gender</option>

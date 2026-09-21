@@ -1334,6 +1334,15 @@ def valid_birth_date(value):
         return False
 
 
+def valid_client_name(value, allow_empty=False):
+    """Accept human names while rejecting numeric and control-style input."""
+    if not value:
+        return allow_empty
+    return any(character.isalpha() for character in value) and all(
+        character.isalpha() or character in " .'-" for character in value
+    )
+
+
 def valid_email(value):
     return not value or (
         len(value) <= 254
@@ -1454,6 +1463,11 @@ def request_appointment():
             flash("Complete all required fields.", "error")
         elif any(len(fields[name]) > 80 for name in ("last_name", "first_name")) or len(fields["middle_initial"]) > 5:
             flash("Please use a shorter client name.", "error")
+        elif not all(
+            valid_client_name(fields[name], allow_empty=name == "middle_initial")
+            for name in ("last_name", "first_name", "middle_initial")
+        ):
+            flash("Client names can use letters, spaces, apostrophes, periods, and hyphens only.", "error")
         elif fields["barangay"] not in BARANGAYS:
             flash("Choose a valid barangay.", "error")
         elif not valid_birth_date(fields["birth_date"]):
@@ -1525,6 +1539,7 @@ def request_appointment():
         barangays=BARANGAYS,
         max_daily_requests=MAX_PUBLIC_REQUESTS_PER_DAY,
         request_limit_reached=daily_request_count >= MAX_PUBLIC_REQUESTS_PER_DAY,
+        today=clinic_today().isoformat(),
     )
 
 
@@ -2103,6 +2118,11 @@ def add_manual_appointment():
         flash("Client names must be 80 characters or fewer.", "error")
     elif len(fields["middle_initial"]) > 10:
         flash("The middle initial must be 10 characters or fewer.", "error")
+    elif not all(
+        valid_client_name(fields[name], allow_empty=name == "middle_initial")
+        for name in ("last_name", "first_name", "middle_initial")
+    ):
+        flash("Client names can use letters, spaces, apostrophes, periods, and hyphens only.", "error")
     elif not valid_birth_date(fields["birth_date"]):
         flash("Enter a valid birth date.", "error")
     elif fields["gender"] not in VALID_GENDERS:

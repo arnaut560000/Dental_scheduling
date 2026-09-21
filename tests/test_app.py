@@ -134,6 +134,47 @@ class SchedulingSystemTests(unittest.TestCase):
         self.assertEqual(row["gender"], "Others")
         self.assertEqual(row["privacy_notice_version"], scheduling_app.PRIVACY_NOTICE_VERSION)
 
+    def test_client_name_and_birth_date_inputs_reject_invalid_values(self):
+        page = self.client.get("/")
+        self.assertIn(
+            f'max="{scheduling_app.clinic_today().isoformat()}"'.encode(), page.data
+        )
+        self.assertIn(b"replace(/[0-9]/g, '')", page.data)
+
+        common_fields = {
+            "first_name": "Test",
+            "birth_date": "2000-01-01",
+            "gender": "Others",
+            "barangay": scheduling_app.BARANGAYS[0],
+            "category": "Regular",
+            "privacy_consent": "on",
+        }
+        numeric_name = self.client.post(
+            "/",
+            data={
+                **common_fields,
+                "last_name": "Client2",
+                "contact_number": "09171234568",
+            },
+        )
+        self.assertIn(b"Client names can use letters", numeric_name.data)
+
+        future_birth_date = self.client.post(
+            "/",
+            data={
+                **common_fields,
+                "last_name": "Client",
+                "birth_date": (scheduling_app.clinic_today() + timedelta(days=1)).isoformat(),
+                "contact_number": "09171234569",
+            },
+        )
+        self.assertIn(b"Enter a valid birth date.", future_birth_date.data)
+        with scheduling_app.app.app_context():
+            count = scheduling_app.db().execute(
+                "SELECT COUNT(*) FROM client_requests"
+            ).fetchone()[0]
+        self.assertEqual(count, 0)
+
     def test_client_records_can_be_filtered_by_sector(self):
         appointment_date = self.next_monday()
         self.insert_appointment(appointment_date, "08:00", "Approved", category="PWD")
@@ -499,7 +540,7 @@ class SchedulingSystemTests(unittest.TestCase):
         response = self.client.get("/", base_url="https://clinic.example")
         self.assertEqual(response.status_code, 200)
         self.assertIn(b'property="og:image"', response.data)
-        self.assertIn(b"/static/edental-link-preview.png", response.data)
+        self.assertIn(b"/static/edental-link-preview-v2.png", response.data)
         self.assertIn(b'name="twitter:card" content="summary_large_image"', response.data)
 
     def test_header_uses_the_municipal_dental_logo(self):
