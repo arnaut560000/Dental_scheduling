@@ -205,13 +205,14 @@ class SchedulingSystemTests(unittest.TestCase):
                 "SELECT texted, called FROM appointments WHERE id=?", (appointment_id,)
             ).fetchone()
             history = scheduling_app.db().execute(
-                "SELECT action, notes FROM appointment_history WHERE appointment_id=? ORDER BY id DESC",
+                "SELECT action, notes, created_at FROM appointment_history WHERE appointment_id=? ORDER BY id DESC",
                 (appointment_id,),
             ).fetchone()
         self.assertEqual(appointment["texted"], 1)
         self.assertEqual(appointment["called"], 0)
         self.assertEqual(history["action"], "Texted")
         self.assertIsNone(history["notes"])
+        self.assertIsNotNone(history["created_at"])
 
     def test_scheduling_a_client_automatically_marks_called(self):
         appointment_date = self.next_monday()
@@ -255,12 +256,12 @@ class SchedulingSystemTests(unittest.TestCase):
                 SELECT request_submitted_at
                 FROM appointment_history
                 WHERE appointment_id=(SELECT id FROM appointments WHERE first_name='Called')
-                  AND action='Scheduled'
+                  AND action='Approved'
                 """
             ).fetchone()["request_submitted_at"]
         self.assertEqual(appointment["called"], 1)
         self.assertEqual(appointment["registration_mode"], "Online")
-        self.assertEqual(history_actions, ["Scheduled", "Called"])
+        self.assertEqual(history_actions, ["Approved", "Called"])
         self.assertIsNotNone(request_time)
 
     def test_pending_clients_keep_submission_order_and_every_client_can_be_scheduled(self):
@@ -314,6 +315,8 @@ class SchedulingSystemTests(unittest.TestCase):
         page = self.client.get("/admin/appointments?section=approved")
         self.assertNotIn(blocked_date.encode(), page.data)
         self.assertIn(b"Choose a clinic date", page.data)
+        self.assertIn(b'class="clinic-calendar"', page.data)
+        self.assertNotIn(b'<select id="schedule-date"', page.data)
         self.assertNotIn(b">Reschedule</button>", page.data)
         self.assertNotIn(b">Manage</button>", page.data)
         self.assertNotIn(b">Notes</button>", page.data)

@@ -1313,12 +1313,7 @@ def valid_clinic_date(value):
 
 
 def selectable_clinic_dates(days_ahead=366):
-    """Return future, open clinic dates for staff scheduling controls.
-
-    A native HTML date input cannot disable individual weekdays. Supplying a
-    select list means staff can only choose configured clinic days (Monday,
-    Wednesday, and Friday by default) and skips administrator-blocked dates.
-    """
+    """Return future, open clinic dates for the staff scheduling calendar."""
     configuration = clinic_configuration()
     start = clinic_today()
     end = start + timedelta(days=days_ahead)
@@ -2077,7 +2072,7 @@ def schedule_request(request_id):
 
             record_appointment_history(
                 appointment_id,
-                "Scheduled",
+                "Approved",
                 new_status="Approved",
                 new_date=appointment_date,
                 new_time=appointment_time,
@@ -2390,10 +2385,17 @@ def mark_client_texted(appointment_id):
     if appointment["texted"]:
         return result("Texted is already marked.")
 
-    database.execute(
-        "UPDATE appointments SET texted=1, updated_at=CURRENT_TIMESTAMP WHERE id=?",
+    changed = database.execute(
+        """
+        UPDATE appointments
+        SET texted=1, updated_at=CURRENT_TIMESTAMP
+        WHERE id=? AND status='Approved' AND texted=0
+        """,
         (appointment_id,),
     )
+    if changed.rowcount != 1:
+        database.rollback()
+        return result("Texted is already marked.")
     record_appointment_history(
         appointment_id,
         "Texted",

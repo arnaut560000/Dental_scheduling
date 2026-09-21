@@ -113,6 +113,7 @@
                       {% if appointment.called %}<span class="badge approved">Called</span>{% endif %}
                       {% if appointment.texted %}<span class="badge approved">Texted</span>{% endif %}
                     </div>
+                    <span class="status-timestamp">Approved at {{ appointment.created_at }}</span>
                   </td>
                   <td>
                     <div class="inline-actions">
@@ -206,11 +207,18 @@
     <form id="schedule-form" method="post" class="appointment-form">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <div class="form-grid">
-        <label>Appointment date
-          <select id="schedule-date" name="appointment_date" required>
-            <option value="">Choose a clinic date</option>
-            {% for clinic_date in clinic_dates %}<option value="{{ clinic_date.value }}">{{ clinic_date.label }}</option>{% endfor %}
-          </select>
+        <label class="calendar-field">Appointment date
+          <input id="schedule-date" name="appointment_date" type="hidden" required>
+          <div class="clinic-calendar" data-calendar-input="schedule-date" data-calendar-display="schedule-date-display">
+            <div class="calendar-toolbar">
+              <button class="calendar-nav calendar-previous" type="button" aria-label="Previous month">‹</button>
+              <strong class="calendar-month" aria-live="polite"></strong>
+              <button class="calendar-nav calendar-next" type="button" aria-label="Next month">›</button>
+            </div>
+            <div class="calendar-weekdays" aria-hidden="true"><span>Sun</span><span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span></div>
+            <div class="calendar-days" role="group" aria-label="Available clinic dates"></div>
+          </div>
+          <span id="schedule-date-display" class="calendar-selection">Choose a clinic date.</span>
         </label>
         <label>
           Available time
@@ -284,11 +292,18 @@
             <option value="Text">Text</option>
           </select>
         </label>
-        <label>Appointment date
-          <select id="add-client-date" name="appointment_date" required>
-            <option value="">Choose a clinic date</option>
-            {% for clinic_date in clinic_dates %}<option value="{{ clinic_date.value }}">{{ clinic_date.label }}</option>{% endfor %}
-          </select>
+        <label class="calendar-field">Appointment date
+          <input id="add-client-date" name="appointment_date" type="hidden" required>
+          <div class="clinic-calendar" data-calendar-input="add-client-date" data-calendar-display="add-client-date-display">
+            <div class="calendar-toolbar">
+              <button class="calendar-nav calendar-previous" type="button" aria-label="Previous month">‹</button>
+              <strong class="calendar-month" aria-live="polite"></strong>
+              <button class="calendar-nav calendar-next" type="button" aria-label="Next month">›</button>
+            </div>
+            <div class="calendar-weekdays" aria-hidden="true"><span>Sun</span><span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span></div>
+            <div class="calendar-days" role="group" aria-label="Available clinic dates"></div>
+          </div>
+          <span id="add-client-date-display" class="calendar-selection">Choose a clinic date.</span>
         </label>
         <label>Available time<select id="add-client-time" name="appointment_time" required disabled><option value="">Choose a date first</option></select></label>
       </div>
@@ -329,6 +344,8 @@
       const clientManagementContent = document.getElementById('client-management-content');
       const liveMessage = document.getElementById('client-live-message');
       const liveVersionUrl = "{{ url_for('appointments_live_version') }}";
+      const clinicDateValues = {{ clinic_dates | map(attribute='value') | list | tojson }};
+      const allowedClinicDates = new Set(clinicDateValues);
       let refreshInProgress = false;
       let liveVersion = '';
 
@@ -340,6 +357,109 @@
 
       function formatTime(value) {
         return new Date(`2000-01-01T${value}`).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+      }
+
+      function parseClinicDate(value) {
+        if (!value) return null;
+        const [year, month, day] = value.split('-').map(Number);
+        return new Date(year, month - 1, day);
+      }
+
+      function clinicDateKey(year, month, day) {
+        return `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+      }
+
+      function formatClinicDate(value) {
+        const selectedDate = parseClinicDate(value);
+        return selectedDate ? selectedDate.toLocaleDateString('en-PH', {
+          weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
+        }) : 'Choose a clinic date.';
+      }
+
+      function createClinicCalendar(inputId) {
+        const input = document.getElementById(inputId);
+        const calendar = document.querySelector(`[data-calendar-input="${inputId}"]`);
+        if (!input || !calendar) return { clear: function () {} };
+
+        const display = document.getElementById(calendar.dataset.calendarDisplay);
+        const monthLabel = calendar.querySelector('.calendar-month');
+        const days = calendar.querySelector('.calendar-days');
+        const previous = calendar.querySelector('.calendar-previous');
+        const next = calendar.querySelector('.calendar-next');
+        const firstAvailable = parseClinicDate(clinicDateValues[0]);
+        let currentMonth = firstAvailable
+          ? new Date(firstAvailable.getFullYear(), firstAvailable.getMonth(), 1)
+          : null;
+
+        function monthHasAvailableDate(monthDate) {
+          return clinicDateValues.some(function (value) {
+            const candidate = parseClinicDate(value);
+            return candidate.getFullYear() === monthDate.getFullYear()
+              && candidate.getMonth() === monthDate.getMonth();
+          });
+        }
+
+        function render() {
+          if (!currentMonth) {
+            monthLabel.textContent = 'No available dates';
+            days.innerHTML = '<span class="calendar-empty-message">No clinic dates are available.</span>';
+            previous.disabled = true;
+            next.disabled = true;
+            return;
+          }
+          const year = currentMonth.getFullYear();
+          const month = currentMonth.getMonth();
+          monthLabel.textContent = currentMonth.toLocaleDateString('en-PH', { month: 'long', year: 'numeric' });
+          previous.disabled = !monthHasAvailableDate(new Date(year, month - 1, 1));
+          next.disabled = !monthHasAvailableDate(new Date(year, month + 1, 1));
+          days.innerHTML = '';
+
+          for (let empty = 0; empty < new Date(year, month, 1).getDay(); empty += 1) {
+            const spacer = document.createElement('span');
+            spacer.className = 'calendar-empty';
+            days.appendChild(spacer);
+          }
+          const daysInMonth = new Date(year, month + 1, 0).getDate();
+          for (let day = 1; day <= daysInMonth; day += 1) {
+            const value = clinicDateKey(year, month, day);
+            const button = document.createElement('button');
+            const isAvailable = allowedClinicDates.has(value);
+            button.type = 'button';
+            button.textContent = day;
+            button.className = `calendar-day${isAvailable ? '' : ' unavailable'}${input.value === value ? ' selected' : ''}`;
+            button.disabled = !isAvailable;
+            button.setAttribute('aria-label', formatClinicDate(value));
+            if (isAvailable) {
+              button.addEventListener('click', function () {
+                input.value = value;
+                display.textContent = formatClinicDate(value);
+                render();
+                input.dispatchEvent(new Event('change', { bubbles: true }));
+              });
+            }
+            days.appendChild(button);
+          }
+        }
+
+        previous.addEventListener('click', function () {
+          currentMonth = new Date(currentMonth.getFullYear(), currentMonth.getMonth() - 1, 1);
+          render();
+        });
+        next.addEventListener('click', function () {
+          currentMonth = new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 1);
+          render();
+        });
+        render();
+        return {
+          clear: function () {
+            input.value = '';
+            display.textContent = 'Choose a clinic date.';
+            currentMonth = firstAvailable
+              ? new Date(firstAvailable.getFullYear(), firstAvailable.getMonth(), 1)
+              : null;
+            render();
+          },
+        };
       }
 
       function showLiveMessage(message, isError) {
@@ -445,13 +565,16 @@
         }
       }
 
+      const scheduleCalendar = createClinicCalendar('schedule-date');
+      const addClientCalendar = createClinicCalendar('add-client-date');
+
       function bindScheduleButtons() {
         document.querySelectorAll('.schedule-button:not([data-live-bound])').forEach(function (button) {
           button.dataset.liveBound = 'true';
           button.addEventListener('click', function () {
           scheduleForm.action = `/admin/requests/${button.dataset.requestId}/schedule`;
           document.getElementById('schedule-client').textContent = button.dataset.clientName.trim();
-          scheduleDate.value = '';
+          scheduleCalendar.clear();
           scheduleTime.disabled = true;
           scheduleTime.innerHTML = '<option value="">Choose a date first</option>';
           scheduleHelp.textContent = 'Choose an available future clinic date.';
@@ -481,6 +604,7 @@
         button.dataset.liveBound = 'true';
         button.addEventListener('click', function () {
           addClientForm.reset();
+          addClientCalendar.clear();
           addClientTime.disabled = true;
           addClientTime.innerHTML = '<option value="">Choose a date first</option>';
           addClientHelp.textContent = 'Choose an available future clinic date.';
@@ -507,10 +631,10 @@
             }
             list.innerHTML = data.history.map(function (item) {
               const schedule = item.new_date ? `${escapeHtml(item.new_date)} ${escapeHtml(item.new_time || '')}` : '';
-              const recordedLabel = item.action === 'Scheduled' ? 'Approved' : 'Recorded';
+              const action = item.action === 'Scheduled' ? 'Approved' : item.action;
               return '<article class="history-item">' +
-                `<strong>${escapeHtml(item.action)}</strong><br>` +
-                `<span>${recordedLabel}: ${escapeHtml(item.created_at)} · ${escapeHtml(item.staff_name)}</span>` +
+                `<strong>${escapeHtml(action)}</strong><br>` +
+                `<span>${escapeHtml(action)} at: ${escapeHtml(item.created_at)} · ${escapeHtml(item.staff_name)}</span>` +
                 (item.request_submitted_at ? `<p>Request submitted: ${escapeHtml(item.request_submitted_at)}</p>` : '') +
                 (schedule ? `<p>Schedule: ${schedule}</p>` : '') +
                 (item.reason ? `<p>Reason: ${escapeHtml(item.reason)}</p>` : '') +
