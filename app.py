@@ -70,7 +70,7 @@ MAX_PUBLIC_REQUESTS_PER_DAY = 50
 REQUEST_COOLDOWN_DAYS = 30
 PRIVACY_NOTICE_VERSION = "2026-09-13"
 CLINIC_DAYS = {0, 2, 4}  # Monday, Wednesday, Friday
-VALID_CATEGORIES = {"Regular", "PWD", "Senior Citizen", "Pregnant Woman"}
+VALID_CATEGORIES = {"General Public", "PWD", "Senior Citizen", "Pregnant Woman"}
 VALID_GENDERS = {"Female", "Male", "Others"}
 VALID_REGISTRATION_MODES = {"Email", "Form", "Online", "Text"}
 BARANGAYS = [
@@ -474,6 +474,7 @@ CONTACT_STATUS_MIGRATION = "005_appointment_contact_status"
 CONTACT_METHOD_FLAGS_MIGRATION = "006_appointment_contact_method_flags"
 REGISTRATION_MODE_MIGRATION = "007_appointment_registration_mode"
 REQUEST_SUBMITTED_HISTORY_MIGRATION = "008_appointment_request_submitted_history"
+GENERAL_PUBLIC_CATEGORY_MIGRATION = "009_general_public_category"
 
 DEFAULT_CLINIC_SETTINGS = {
     "clinic_days": "0,2,4",
@@ -691,6 +692,16 @@ def migrate_appointment_request_submitted_history(database):
     )
 
 
+def migrate_general_public_category(database):
+    """Use the clearer General Public sector label for existing records."""
+    database.execute(
+        "UPDATE client_requests SET category='General Public' WHERE category='Regular'"
+    )
+    database.execute(
+        "UPDATE appointments SET category='General Public' WHERE category='Regular'"
+    )
+
+
 def clinic_configuration():
     """Return validated scheduling settings, cached for the current request."""
     if "clinic_configuration" in g:
@@ -832,6 +843,11 @@ def init_db():
         if REQUEST_SUBMITTED_HISTORY_MIGRATION not in completed:
             migrate_appointment_request_submitted_history(database)
             record_migration(database, REQUEST_SUBMITTED_HISTORY_MIGRATION)
+            completed.add(REQUEST_SUBMITTED_HISTORY_MIGRATION)
+        if GENERAL_PUBLIC_CATEGORY_MIGRATION not in completed:
+            migrate_general_public_category(database)
+            record_migration(database, GENERAL_PUBLIC_CATEGORY_MIGRATION)
+            completed.add(GENERAL_PUBLIC_CATEGORY_MIGRATION)
     finally:
         if locked:
             database.execute("SELECT pg_advisory_unlock(83742619)")
@@ -2310,7 +2326,7 @@ def appointments():
         section_counts=section_counts,
         selected_date=selected_date,
         selected_category=category_filter,
-        categories=["Regular", "PWD", "Senior Citizen", "Pregnant Woman"],
+        categories=["General Public", "PWD", "Senior Citizen", "Pregnant Woman"],
         barangays=BARANGAYS,
         search=search,
         rejected_requests=rejected_requests,

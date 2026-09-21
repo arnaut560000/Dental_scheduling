@@ -119,7 +119,7 @@ class SchedulingSystemTests(unittest.TestCase):
                 "birth_date": "2000-01-01",
                 "gender": "Others",
                 "barangay": scheduling_app.BARANGAYS[0],
-                "category": "Regular",
+                "category": "General Public",
                 "contact_number": "09171234567",
                 "privacy_consent": "on",
             },
@@ -146,7 +146,7 @@ class SchedulingSystemTests(unittest.TestCase):
             "birth_date": "2000-01-01",
             "gender": "Others",
             "barangay": scheduling_app.BARANGAYS[0],
-            "category": "Regular",
+            "category": "General Public",
             "privacy_consent": "on",
         }
         numeric_name = self.client.post(
@@ -436,6 +436,45 @@ class SchedulingSystemTests(unittest.TestCase):
         self.assertEqual(appointment["texted"], 1)
         self.assertEqual(appointment["called"], 1)
 
+    def test_general_public_category_migration_renames_regular_records(self):
+        appointment_date = self.next_monday().isoformat()
+        with scheduling_app.app.app_context():
+            database = scheduling_app.db()
+            database.execute(
+                """
+                INSERT INTO client_requests (
+                    request_code, last_name, first_name, birth_date, gender, barangay,
+                    category, contact_number, contact_key, privacy_consent
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
+                """,
+                (
+                    "LEGACY-REGULAR", "Legacy", "Request", "1990-01-01", "Others",
+                    scheduling_app.BARANGAYS[0], "Regular", "09170000030", "09170000030",
+                ),
+            )
+            database.execute(
+                """
+                INSERT INTO appointments (
+                    last_name, first_name, birth_date, gender, barangay, category,
+                    contact_number, contact_key, appointment_date, appointment_time, status
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    "Legacy", "Appointment", "1990-01-01", "Others", scheduling_app.BARANGAYS[0],
+                    "Regular", "09170000031", "09170000031", appointment_date, "08:00", "Approved",
+                ),
+            )
+            scheduling_app.migrate_general_public_category(database)
+            database.commit()
+            request_category = database.execute(
+                "SELECT category FROM client_requests WHERE request_code='LEGACY-REGULAR'"
+            ).fetchone()[0]
+            appointment_category = database.execute(
+                "SELECT category FROM appointments WHERE first_name='Appointment'"
+            ).fetchone()[0]
+        self.assertEqual(request_category, "General Public")
+        self.assertEqual(appointment_category, "General Public")
+
     def test_client_sections_show_only_their_matching_records(self):
         appointment_date = self.next_monday()
         self.insert_appointment(appointment_date, "08:00", "Approved")
@@ -524,7 +563,7 @@ class SchedulingSystemTests(unittest.TestCase):
                 "birth_date": "2000-01-01",
                 "gender": "Others",
                 "barangay": scheduling_app.BARANGAYS[0],
-                "category": "Regular",
+                "category": "General Public",
                 "contact_number": "09991234567",
                 "privacy_consent": "on",
             },
@@ -667,6 +706,7 @@ class SchedulingSystemTests(unittest.TestCase):
         self.assertIn(scheduling_app.CONTACT_METHOD_FLAGS_MIGRATION, versions)
         self.assertIn(scheduling_app.REGISTRATION_MODE_MIGRATION, versions)
         self.assertIn(scheduling_app.REQUEST_SUBMITTED_HISTORY_MIGRATION, versions)
+        self.assertIn(scheduling_app.GENERAL_PUBLIC_CATEGORY_MIGRATION, versions)
 
         with scheduling_app.app.app_context():
             appointment_columns = scheduling_app.table_columns(

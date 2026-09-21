@@ -126,7 +126,7 @@
       <fieldset class="choice-group sector-group">
         <legend>Sector*</legend>
         <div class="option-list sector-options">
-          {% for category in ['Regular', 'PWD', 'Senior Citizen', 'Pregnant Woman'] %}
+          {% for category in ['General Public', 'PWD', 'Senior Citizen', 'Pregnant Woman'] %}
             <label class="choice-option">
               <input type="checkbox" name="category" value="{{ category }}" {% if category in request.form.getlist('category') %}checked{% endif %}>
               <span>{{ category }}</span>
