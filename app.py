@@ -1833,6 +1833,27 @@ def dashboard():
         ORDER BY count DESC, category ASC
         """
     ).fetchall()
+    service_total = sum(item["count"] for item in service_statistics)
+    service_chart_colors = ["#1854b7", "#f6c915", "#cf2431", "#6f52bd", "#00a892"]
+    service_chart_items = []
+    chart_start = 0.0
+    for index, item in enumerate(service_statistics):
+        chart_end = chart_start + (item["count"] / service_total * 100) if service_total else 0
+        service_chart_items.append(
+            {
+                "category": item["category"],
+                "count": item["count"],
+                "color": service_chart_colors[index % len(service_chart_colors)],
+                "percentage": round(chart_end - chart_start),
+                "start": chart_start,
+                "end": chart_end,
+            }
+        )
+        chart_start = chart_end
+    service_chart_gradient = ", ".join(
+        f"{item['color']} {item['start']:.2f}% {item['end']:.2f}%"
+        for item in service_chart_items
+    )
     upcoming_holidays = [
         holiday for holiday in PHILIPPINE_HOLIDAYS if holiday["date"] >= today_date
     ][:4]
@@ -1853,7 +1874,9 @@ def dashboard():
         selected_day_appointments=selected_day_appointments,
         recent_requests=recent_requests,
         service_statistics=service_statistics,
-        service_total=sum(item["count"] for item in service_statistics),
+        service_total=service_total,
+        service_chart_items=service_chart_items,
+        service_chart_gradient=service_chart_gradient,
         upcoming_holidays=upcoming_holidays,
     )
 

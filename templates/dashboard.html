@@ -120,13 +120,20 @@
         </div>
       </div>
       {% if service_statistics %}
-        <div class="sector-statistics">
-          {% for item in service_statistics %}
-            <div>
-              <div><span>{{ item.category }}</span><strong>{{ item.count }}</strong></div>
-              <i><b style="width: {{ (item.count / service_total * 100)|round|int }}%"></b></i>
-            </div>
-          {% endfor %}
+        <div class="service-chart-layout">
+          <div class="service-donut" style="--service-chart: conic-gradient({{ service_chart_gradient }});" role="img" aria-label="{{ service_total }} approved or completed clients by sector">
+            <div class="service-donut-center"><strong>{{ service_total }}</strong><span>clients</span></div>
+          </div>
+          <div class="sector-statistics" aria-label="Service statistics by sector">
+            {% for item in service_chart_items %}
+              <div class="sector-statistic-item">
+                <span class="sector-chart-key" style="background: {{ item.color }};" aria-hidden="true"></span>
+                <span class="sector-statistic-label">{{ item.category }}</span>
+                <strong>{{ item.count }}</strong>
+                <small>{{ item.percentage }}%</small>
+              </div>
+            {% endfor %}
+          </div>
         </div>
         <p class="notice">Includes clients with approved or completed appointments.</p>
       {% else %}
