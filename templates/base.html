@@ -22,7 +22,7 @@
  {% set is_public_client_page = request.endpoint in ('request_appointment', 'privacy_notice') %}
 <body class="{% if has_authenticated_staff and not is_public_client_page %}staff-layout{% else %}public-layout{% endif %}">
   <header class="site-header">
-      <a class="brand" href="{{ url_for('request_appointment') }}" aria-label="Municipal Dental Service Appointment and Management System">
+      <a class="brand" href="{{ url_for('dashboard') if has_authenticated_staff and not is_public_client_page else url_for('login') }}" aria-label="{% if has_authenticated_staff and not is_public_client_page %}Open staff dashboard{% else %}Open staff sign in{% endif %}">
         <img
           src="{{ url_for('static', filename='municipal-dental-logo.png') }}"
           alt="Municipal Dental Service Appointment and Management System"
@@ -45,8 +45,6 @@
           </button>
           <a href="{{ url_for('logout') }}">Log out</a>
         </nav>
-      {% else %}
-        <a class="admin-link" href="{{ url_for('login') }}">Staff sign in</a>
       {% endif %}
     </header>
     <main>

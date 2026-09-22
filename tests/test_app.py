@@ -594,11 +594,12 @@ class SchedulingSystemTests(unittest.TestCase):
         finally:
             logo_response.close()
 
-    def test_public_client_page_shows_only_the_staff_sign_in_link(self):
+    def test_public_client_page_uses_the_logo_for_staff_sign_in(self):
         self.sign_in_as_admin()
         response = self.client.get("/")
 
-        self.assertIn(b"Staff sign in", response.data)
+        self.assertIn(b'<a class="brand" href="/admin/login"', response.data)
+        self.assertNotIn(b'class="admin-link"', response.data)
         self.assertNotIn(b">Dashboard</a>", response.data)
         self.assertNotIn(b">Clients</a>", response.data)
         self.assertNotIn(b">Accounts</a>", response.data)
@@ -608,7 +609,8 @@ class SchedulingSystemTests(unittest.TestCase):
         self.sign_in_as_admin()
 
         login_page = self.client.get("/admin/login")
-        self.assertIn(b"Staff sign in", login_page.data)
+        self.assertIn(b'<a class="brand" href="/admin/login"', login_page.data)
+        self.assertNotIn(b'class="admin-link"', login_page.data)
         self.assertNotIn(b">Dashboard</a>", login_page.data)
         self.assertNotIn(b">Clients</a>", login_page.data)
 

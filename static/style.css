@@ -49,31 +49,13 @@ body {
   object-position: left center;
 }
 
-/* Public client page: brand left, login button right */
+/* Public client page: the logo links to staff sign in. */
 .public-layout .site-header {
   display: flex;
   align-items: center;
   min-height: 104px;
   gap: 24px;
   padding: 12px max(5vw, 24px);
-}
-
-.public-layout .admin-link {
-  display: inline-flex;
-  align-items: center;
-  min-height: 38px;
-  margin-left: auto;
-  padding: 8px 14px;
-  border-radius: 8px;
-  background: var(--green);
-  color: #fff;
-  font-size: 14px;
-  font-weight: 700;
-  text-decoration: none;
-}
-
-.public-layout .admin-link:hover {
-  background: var(--blue-dark);
 }
 
 /* Staff pages: permanent navigation sidebar on the left */
@@ -145,7 +127,6 @@ body {
 }
 
 nav a:focus-visible,
-.admin-link:focus-visible,
 button:focus-visible,
 .button-link:focus-visible {
   outline: 3px solid var(--focus);
