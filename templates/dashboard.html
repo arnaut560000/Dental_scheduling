@@ -155,33 +155,22 @@
       {% endif %}
     </section>
 
-    <div class="dashboard-side-stack">
-      <section class="card quick-actions-card dashboard-elevated-card">
-        <p class="eyebrow"><span class="card-mark action-mark" aria-hidden="true">+</span>QUICK ACTIONS</p>
-        <h2>Clinic actions</h2>
-        <a class="dashboard-action-link primary" href="{{ url_for('appointments', section='pending') }}"><span><strong>Review requests</strong><small>Open the waiting list</small></span><b aria-hidden="true">→</b></a>
-        <a class="dashboard-action-link" href="{{ url_for('appointments', section='approved') }}"><span><strong>Client records</strong><small>See approved appointments</small></span><b aria-hidden="true">→</b></a>
-        {% if session.role == 'admin' %}
-          <a class="dashboard-action-link" href="{{ url_for('clinic_settings_page') }}"><span><strong>Clinic settings</strong><small>Schedule and closures</small></span><b aria-hidden="true">→</b></a>
-        {% endif %}
-      </section>
-      <section class="card announcement-card dashboard-elevated-card">
-        <div class="dashboard-card-heading">
-          <div>
-            <p class="eyebrow"><span class="card-mark announcement-mark" aria-hidden="true">!</span>ANNOUNCEMENTS</p>
-            <h2>Upcoming Philippine holidays</h2>
-          </div>
+    <section class="card announcement-card dashboard-elevated-card">
+      <div class="dashboard-card-heading">
+        <div>
+          <p class="eyebrow"><span class="card-mark announcement-mark" aria-hidden="true">!</span>ANNOUNCEMENTS</p>
+          <h2>Upcoming Philippine holidays</h2>
         </div>
-        {% for holiday in upcoming_holidays %}
-          <article class="holiday-announcement">
-            <strong>{{ holiday.name }}</strong>
-            <span>{{ holiday.date.strftime('%d %B %Y') }} · {{ holiday.type }}</span>
-          </article>
-        {% else %}
-          <p class="empty">No holiday announcement is currently listed.</p>
-        {% endfor %}
-        <p class="notice">Block clinic dates in Settings if the clinic will close for a holiday.</p>
-      </section>
-    </div>
+      </div>
+      {% for holiday in upcoming_holidays %}
+        <article class="holiday-announcement">
+          <strong>{{ holiday.name }}</strong>
+          <span>{{ holiday.date.strftime('%d %B %Y') }} · {{ holiday.type }}</span>
+        </article>
+      {% else %}
+        <p class="empty">No holiday announcement is currently listed.</p>
+      {% endfor %}
+      <p class="notice">Block clinic dates in Settings if the clinic will close for a holiday.</p>
+    </section>
   </div>
 {% endblock %}
