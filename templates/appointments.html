@@ -47,6 +47,9 @@
         </label>
         <button type="submit">Search records</button>
       </div>
+      <div class="client-filter-actions">
+        <button class="secondary-button add-client-button" type="button">Add client</button>
+      </div>
     </form>
     <section class="card table-card">
       <div class="section-summary">
@@ -102,7 +105,7 @@
       </div>
       {% if client_section == 'approved' %}
         <div class="client-filter-actions">
-          <button class="secondary-button" id="add-client-button" type="button">Add approved client</button>
+          <button class="secondary-button add-client-button" type="button">Add client</button>
           {% if selected_date and session.role == 'admin' %}
             <a class="button-link secondary" href="{{ url_for('export_day', date=selected_date) }}">Export this day</a>
           {% endif %}
@@ -623,16 +626,16 @@
       document.getElementById('reject-close').addEventListener('click', function () { rejectModal.close(); });
 
       function bindAddClientButton() {
-        const button = document.getElementById('add-client-button');
-        if (!button || button.dataset.liveBound) return;
-        button.dataset.liveBound = 'true';
-        button.addEventListener('click', function () {
-          addClientForm.reset();
-          addClientCalendar.clear();
-          addClientTime.disabled = true;
-          addClientTime.innerHTML = '<option value="">Choose a date first</option>';
-          addClientHelp.textContent = 'Choose an available future clinic date.';
-          addClientModal.showModal();
+        document.querySelectorAll('.add-client-button:not([data-live-bound])').forEach(function (button) {
+          button.dataset.liveBound = 'true';
+          button.addEventListener('click', function () {
+            addClientForm.reset();
+            addClientCalendar.clear();
+            addClientTime.disabled = true;
+            addClientTime.innerHTML = '<option value="">Choose a date first</option>';
+            addClientHelp.textContent = 'Choose an available future clinic date.';
+            addClientModal.showModal();
+          });
         });
       }
       addClientDate.addEventListener('change', function () { populateTimes(addClientDate, addClientTime, addClientHelp); });
