@@ -48,12 +48,12 @@
           <tbody>
             {% for client_request in waiting_requests %}
               <tr>
-                <td><strong>{{ client_request.last_name }}, {{ client_request.first_name }} {{ client_request.middle_initial }}</strong><br>{% if session.role == 'admin' %}{{ client_request.birth_date }} · {% endif %}{{ client_request.gender or 'Not recorded' }}</td>
+                <td><strong>{{ client_request.last_name|client_name }}, {{ client_request.first_name|client_name }} {{ client_request.middle_initial|client_name }}</strong><br>{% if session.role == 'admin' %}{{ client_request.birth_date }} · {% endif %}{{ client_request.gender or 'Not recorded' }}</td>
                 <td><strong>{{ client_request.category }}</strong><br>{{ client_request.barangay }}</td>
                 <td>{{ client_request.contact_number }}{% if session.role == 'admin' and client_request.email %}<br>{{ client_request.email }}{% endif %}</td>
                 <td>
-                  <button class="small schedule-button" type="button" data-request-id="{{ client_request.id }}" data-client-name="{{ client_request.last_name }}, {{ client_request.first_name }} {{ client_request.middle_initial or '' }}">Schedule client</button>
-                  <button class="small secondary-button reject-button" type="button" data-request-id="{{ client_request.id }}" data-client-name="{{ client_request.last_name }}, {{ client_request.first_name }} {{ client_request.middle_initial or '' }}">Reject request</button>
+                  <button class="small schedule-button" type="button" data-request-id="{{ client_request.id }}" data-client-name="{{ client_request.last_name|client_name }}, {{ client_request.first_name|client_name }} {{ (client_request.middle_initial or '')|client_name }}">Schedule client</button>
+                  <button class="small secondary-button reject-button" type="button" data-request-id="{{ client_request.id }}" data-client-name="{{ client_request.last_name|client_name }}, {{ client_request.first_name|client_name }} {{ (client_request.middle_initial or '')|client_name }}">Reject request</button>
                   {% if session.role == 'admin' and client_request.id_document_data %}
                     <a class="small secondary-button" href="{{ url_for('view_client_id_document', request_id=client_request.id) }}" target="_blank" rel="noopener">View ID</a>
                   {% endif %}
@@ -106,7 +106,7 @@
               {% for appointment in appointments %}
                 <tr>
                   <td>{{ appointment.appointment_date }}<br><strong>{{ appointment.appointment_time|time12 }}</strong></td>
-                  <td><strong>{{ appointment.last_name }}, {{ appointment.first_name }} {{ appointment.middle_initial }}</strong><br>{% if session.role == 'admin' %}{{ appointment.birth_date }} · {% endif %}{{ appointment.gender or 'Not recorded' }}</td>
+                  <td><strong>{{ appointment.last_name|client_name }}, {{ appointment.first_name|client_name }} {{ appointment.middle_initial|client_name }}</strong><br>{% if session.role == 'admin' %}{{ appointment.birth_date }} · {% endif %}{{ appointment.gender or 'Not recorded' }}</td>
                   <td><strong>{{ appointment.category }}</strong><br>{{ appointment.barangay }}</td>
                   <td>{{ appointment.contact_number }}{% if session.role == 'admin' and appointment.email %}<br>{{ appointment.email }}{% endif %}</td>
                   <td><span class="badge">{{ appointment.registration_mode or 'Form' }}</span></td>
@@ -124,7 +124,7 @@
                         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                         <button class="small secondary-button" type="submit" {% if appointment.texted %}disabled{% endif %}>Texted</button>
                       </form>
-                      <button class="small secondary-button history-button" type="button" data-appointment-id="{{ appointment.id }}" data-client-name="{{ appointment.last_name }}, {{ appointment.first_name }} {{ appointment.middle_initial or '' }}">History</button>
+                      <button class="small secondary-button history-button" type="button" data-appointment-id="{{ appointment.id }}" data-client-name="{{ appointment.last_name|client_name }}, {{ appointment.first_name|client_name }} {{ (appointment.middle_initial or '')|client_name }}">History</button>
                     </div>
                   </td>
                 </tr>
@@ -150,12 +150,12 @@
               {% for appointment in appointments %}
                 <tr>
                   <td>{{ appointment.appointment_date }}<br><strong>{{ appointment.appointment_time|time12 }}</strong></td>
-                  <td><strong>{{ appointment.last_name }}, {{ appointment.first_name }} {{ appointment.middle_initial }}</strong><br>{% if session.role == 'admin' %}{{ appointment.birth_date }} · {% endif %}{{ appointment.gender or 'Not recorded' }}</td>
+                  <td><strong>{{ appointment.last_name|client_name }}, {{ appointment.first_name|client_name }} {{ appointment.middle_initial|client_name }}</strong><br>{% if session.role == 'admin' %}{{ appointment.birth_date }} · {% endif %}{{ appointment.gender or 'Not recorded' }}</td>
                   <td><strong>{{ appointment.category }}</strong><br>{{ appointment.barangay }}</td>
                   <td>{{ appointment.contact_number }}{% if session.role == 'admin' and appointment.email %}<br>{{ appointment.email }}{% endif %}</td>
                   <td><span class="badge cancelled">Cancelled</span><br><span class="notice">{{ appointment.status_reason or 'No response was recorded for the scheduled day.' }}</span></td>
                   <td>
-                    <button class="small secondary-button history-button" type="button" data-appointment-id="{{ appointment.id }}" data-client-name="{{ appointment.last_name }}, {{ appointment.first_name }} {{ appointment.middle_initial or '' }}">History</button>
+                    <button class="small secondary-button history-button" type="button" data-appointment-id="{{ appointment.id }}" data-client-name="{{ appointment.last_name|client_name }}, {{ appointment.first_name|client_name }} {{ (appointment.middle_initial or '')|client_name }}">History</button>
                   </td>
                 </tr>
               {% endfor %}
@@ -181,7 +181,7 @@
                 {% for client_request in rejected_requests %}
                   <tr>
                     <td>{{ client_request.created_at }}</td>
-                    <td><strong>{{ client_request.last_name }}, {{ client_request.first_name }} {{ client_request.middle_initial or '' }}</strong><br>{% if session.role == 'admin' %}{{ client_request.birth_date }} · {% endif %}{{ client_request.gender or 'Not recorded' }}</td>
+                    <td><strong>{{ client_request.last_name|client_name }}, {{ client_request.first_name|client_name }} {{ (client_request.middle_initial or '')|client_name }}</strong><br>{% if session.role == 'admin' %}{{ client_request.birth_date }} · {% endif %}{{ client_request.gender or 'Not recorded' }}</td>
                     <td><strong>{{ client_request.category }}</strong><br>{{ client_request.barangay }}</td>
                     <td>{{ client_request.contact_number }}{% if session.role == 'admin' and client_request.email %}<br>{{ client_request.email }}{% endif %}</td>
                     <td><span class="badge cancelled">Rejected</span><br><span class="notice">{{ client_request.status_reason or 'No reason recorded.' }}</span></td>

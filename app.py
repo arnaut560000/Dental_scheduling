@@ -1501,6 +1501,19 @@ def format_time(value):
     return datetime.strptime(value, "%H:%M").strftime("%I:%M %p")
 
 
+def format_client_name(value):
+    """Display client names consistently without changing stored records."""
+    return " ".join(
+        word[:1].upper() + word[1:].lower()
+        for word in str(value or "").strip().split()
+    )
+
+
+@app.template_filter("client_name")
+def client_name(value):
+    return format_client_name(value)
+
+
 def format_manila_datetime(value):
     """Show database timestamps consistently in Philippine time."""
     if not value:
@@ -2770,7 +2783,11 @@ def notifications():
         "requests": [
             {
                 "id": row["id"],
-                "name": f'{row["last_name"]}, {row["first_name"]} {row["middle_initial"] or ""}'.strip(),
+                "name": (
+                    f'{format_client_name(row["last_name"])}, '
+                    f'{format_client_name(row["first_name"])} '
+                    f'{format_client_name(row["middle_initial"] or "")}'
+                ).strip(),
                 "category": row["category"],
                 "barangay": row["barangay"],
                 "submitted_at": row["created_at"],

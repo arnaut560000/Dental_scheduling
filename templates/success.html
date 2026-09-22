@@ -3,7 +3,7 @@
 {% block content %}
   <section class="card confirmation">
     <p class="eyebrow">REQUEST RECEIVED</p>
-    <h1>Thank you, {{ client_request.first_name }}.</h1>
+    <h1>Thank you, {{ client_request.first_name|client_name }}.</h1>
     <p>Your request has been sent to the clinic scheduler. The clinic will contact you with your appointment schedule.</p>
     <p><strong>Submitted:</strong> {{ client_request.submitted_at }}</p>
     <p class="notice">Requests are handled in the order they are submitted. The clinic will contact you with your appointment schedule.</p>

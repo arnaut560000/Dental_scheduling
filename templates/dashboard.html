@@ -85,7 +85,7 @@
                 <tr>
                   <td>{{ loop.index }}</td>
                   <td><strong class="schedule-time">{{ appointment.appointment_time|time12 }}</strong></td>
-                  <td><strong class="schedule-client">{{ appointment.last_name }}, {{ appointment.first_name }}</strong></td>
+                  <td><strong class="schedule-client">{{ appointment.last_name|client_name }}, {{ appointment.first_name|client_name }}</strong></td>
                   <td><span class="sector-pill">{{ appointment.category }}</span></td>
                   <td><span class="badge approved">{{ appointment.status }}</span></td>
                 </tr>
@@ -112,9 +112,9 @@
         <div class="recent-request-list">
           {% for client_request in recent_requests %}
             <article>
-              <div class="request-avatar">{{ client_request.first_name[:1] }}{{ client_request.last_name[:1] }}</div>
+              <div class="request-avatar">{{ (client_request.first_name|client_name)[:1] }}{{ (client_request.last_name|client_name)[:1] }}</div>
               <div>
-                <strong>{{ client_request.last_name }}, {{ client_request.first_name }}</strong>
+                <strong>{{ client_request.last_name|client_name }}, {{ client_request.first_name|client_name }}</strong>
                 <small>Submitted {{ client_request.created_at|manila_datetime }}</small>
               </div>
               <span class="badge">{{ client_request.category }}</span>
