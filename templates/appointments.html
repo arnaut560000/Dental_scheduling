@@ -48,7 +48,7 @@
         <button type="submit">Search records</button>
       </div>
       <div class="client-filter-actions">
-        <button class="secondary-button add-client-button" type="button">Add client</button>
+        <button class="secondary-button add-client-button" type="button">Add approved client</button>
       </div>
     </form>
     <section class="card table-card">
@@ -105,7 +105,7 @@
       </div>
       {% if client_section == 'approved' %}
         <div class="client-filter-actions">
-          <button class="secondary-button add-client-button" type="button">Add client</button>
+          <button class="secondary-button add-client-button" type="button">Add approved client</button>
           {% if selected_date and session.role == 'admin' %}
             <a class="button-link secondary" href="{{ url_for('export_day', date=selected_date) }}">Export this day</a>
           {% endif %}
@@ -277,7 +277,7 @@
     <div class="modal-header">
       <div>
         <p class="eyebrow">STAFF REGISTRATION</p>
-        <h2 id="add-client-heading">Add client</h2>
+        <h2 id="add-client-heading">Add approved client</h2>
         <p class="notice">Use this only for a client recorded directly by clinic staff.</p>
       </div>
       <button class="close-modal" id="add-client-close" type="button" aria-label="Close">×</button>
