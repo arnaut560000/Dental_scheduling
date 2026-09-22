@@ -213,6 +213,8 @@ class SchedulingSystemTests(unittest.TestCase):
         self.assertEqual(history["action"], "Texted")
         self.assertIsNone(history["notes"])
         self.assertIsNotNone(history["created_at"])
+        history_response = self.client.get(f"/admin/appointments/{appointment_id}/history")
+        self.assertIn("PHT", history_response.get_json()["history"][0]["created_at"])
 
     def test_scheduling_a_client_automatically_marks_called(self):
         appointment_date = self.next_monday()
@@ -753,6 +755,10 @@ class SchedulingSystemTests(unittest.TestCase):
 
     def test_clinic_clock_uses_manila_time(self):
         self.assertEqual(scheduling_app.clinic_now().tzinfo.key, "Asia/Manila")
+        self.assertEqual(
+            scheduling_app.format_manila_datetime("Tue, 22 Sep 2026 01:15:16 GMT"),
+            "22 Sep 2026, 9:15 AM PHT",
+        )
 
     def test_new_passwords_require_length_case_and_number(self):
         self.assertTrue(scheduling_app.valid_password("SecurePassword9"))

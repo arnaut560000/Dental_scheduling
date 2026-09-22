@@ -329,9 +329,14 @@ dialog::backdrop { background: #0b2d6e80; }
 .notify-actions button, .notify-actions .button-link { margin: 0; }
 .staff-name { color: var(--muted); font-size: 12px; font-weight: 700; white-space: nowrap; }
 .history-list { display: grid; gap: 10px; max-height: 460px; overflow: auto; margin-top: 16px; }
-.history-item { border: 1px solid var(--line); border-radius: 9px; padding: 12px; background: var(--pale); }
+.history-client-name { margin: 8px 0 0; color: var(--muted); font-size: 14px; font-weight: 700; }
+.history-item { border: 1px solid var(--line); border-radius: 10px; padding: 14px; background: var(--pale); }
+.history-item-head { display: flex; align-items: start; justify-content: space-between; gap: 12px; }
+.history-item-head strong { color: var(--ink); font-size: 16px; }
+.history-item-head span { color: var(--blue-dark); font-size: 12px; font-weight: 700; text-align: right; }
 .history-item span, .history-item p { color: var(--muted); font-size: 13px; }
 .history-item p { margin: 5px 0 0; white-space: pre-wrap; }
+.history-item .history-staff { margin-top: 7px; color: var(--blue-dark); font-weight: 700; }
 .status-timestamp { display: block; margin-top: 6px; color: var(--muted); font-size: 12px; font-weight: 600; }
 .calendar-field { grid-column: span 1; }
 .clinic-calendar { margin-top: 7px; border: 1px solid var(--line); border-radius: 10px; padding: 10px; background: var(--pale); }

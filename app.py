@@ -6,6 +6,7 @@ import re
 import secrets
 import sqlite3
 from datetime import date, datetime, timedelta
+from email.utils import parsedate_to_datetime
 from functools import wraps
 from zoneinfo import ZoneInfo
 
@@ -1425,9 +1426,37 @@ def format_time(value):
     return datetime.strptime(value, "%H:%M").strftime("%I:%M %p")
 
 
+def format_manila_datetime(value):
+    """Show database timestamps consistently in Philippine time."""
+    if not value:
+        return "Not recorded"
+    try:
+        if isinstance(value, datetime):
+            moment = value
+        else:
+            text = str(value).strip()
+            normalized = f"{text[:-1]}+00:00" if text.endswith("Z") else text
+            try:
+                moment = datetime.fromisoformat(normalized)
+            except ValueError:
+                moment = parsedate_to_datetime(text)
+        if moment.tzinfo is None:
+            moment = moment.replace(tzinfo=CLINIC_TIMEZONE)
+        moment = moment.astimezone(CLINIC_TIMEZONE)
+        hour = moment.strftime("%I").lstrip("0") or "0"
+        return f"{moment.strftime('%d %b %Y')}, {hour}:{moment.strftime('%M %p')} PHT"
+    except (TypeError, ValueError, IndexError):
+        return str(value)
+
+
 @app.template_filter("time12")
 def time12(value):
     return format_time(value) if value else ""
+
+
+@app.template_filter("manila_datetime")
+def manila_datetime(value):
+    return format_manila_datetime(value)
 
 
 @app.route("/", methods=["GET", "POST"])
@@ -2520,8 +2549,9 @@ def appointment_history(appointment_id):
                 "new_time": row["new_time"],
                 "reason": row["reason"],
                 "notes": row["notes"],
-                "request_submitted_at": row["request_submitted_at"],
-                "created_at": row["created_at"],
+                "request_submitted_at": format_manila_datetime(row["request_submitted_at"])
+                if row["request_submitted_at"] else None,
+                "created_at": format_manila_datetime(row["created_at"]),
             }
             for row in rows
         ]

@@ -113,7 +113,7 @@
                       {% if appointment.called %}<span class="badge approved">Called</span>{% endif %}
                       {% if appointment.texted %}<span class="badge approved">Texted</span>{% endif %}
                     </div>
-                    <span class="status-timestamp">Approved at {{ appointment.created_at }}</span>
+                    <span class="status-timestamp">Approved at {{ appointment.created_at|manila_datetime }}</span>
                   </td>
                   <td>
                     <div class="inline-actions">
@@ -316,8 +316,8 @@
     <div class="modal-header">
       <div>
         <p class="eyebrow">APPOINTMENT HISTORY</p>
-        <h2 id="history-heading">Change history</h2>
-        <p id="history-client" class="notice"></p>
+        <h2 id="history-heading">Appointment history</h2>
+        <p id="history-client" class="history-client-name"></p>
       </div>
       <button class="close-modal" id="history-close" type="button" aria-label="Close">×</button>
     </div>
@@ -618,7 +618,7 @@
         document.querySelectorAll('.history-button:not([data-live-bound])').forEach(function (button) {
           button.dataset.liveBound = 'true';
           button.addEventListener('click', async function () {
-          document.getElementById('history-client').textContent = button.dataset.clientName.trim();
+          document.getElementById('history-client').textContent = `Client: ${button.dataset.clientName.trim()}`;
           const list = document.getElementById('history-list');
           list.innerHTML = '<p class="notice">Loading history…</p>';
           historyModal.showModal();
@@ -630,15 +630,22 @@
               return;
             }
             list.innerHTML = data.history.map(function (item) {
-              const schedule = item.new_date ? `${escapeHtml(item.new_date)} ${escapeHtml(item.new_time || '')}` : '';
+              const schedule = item.new_date ? `${formatClinicDate(item.new_date)}${item.new_time ? ` · ${formatTime(item.new_time)}` : ''}` : '';
               const action = item.action === 'Scheduled' ? 'Approved' : item.action;
+              const automaticCall = action === 'Called'
+                && item.notes === 'Recorded automatically when the appointment was approved.';
+              const title = automaticCall ? 'Called (automatic)' : action;
+              const timestampLabel = automaticCall ? 'Automatically marked when approved' : `${action} at`;
               return '<article class="history-item">' +
-                `<strong>${escapeHtml(action)}</strong><br>` +
-                `<span>${escapeHtml(action)} at: ${escapeHtml(item.created_at)} · ${escapeHtml(item.staff_name)}</span>` +
-                (item.request_submitted_at ? `<p>Request submitted: ${escapeHtml(item.request_submitted_at)}</p>` : '') +
-                (schedule ? `<p>Schedule: ${schedule}</p>` : '') +
+                '<div class="history-item-head">' +
+                  `<strong>${escapeHtml(title)}</strong>` +
+                  `<span>${escapeHtml(timestampLabel)}: ${escapeHtml(item.created_at)}</span>` +
+                '</div>' +
+                `<p class="history-staff">Recorded by ${escapeHtml(item.staff_name)}</p>` +
+                (item.request_submitted_at ? `<p><b>Request submitted:</b> ${escapeHtml(item.request_submitted_at)}</p>` : '') +
+                (schedule ? `<p><b>Appointment:</b> ${schedule}</p>` : '') +
                 (item.reason ? `<p>Reason: ${escapeHtml(item.reason)}</p>` : '') +
-                (item.notes ? `<p>Notes: ${escapeHtml(item.notes)}</p>` : '') +
+                (item.notes && !automaticCall ? `<p>Notes: ${escapeHtml(item.notes)}</p>` : '') +
               '</article>';
             }).join('');
           } catch (error) {
