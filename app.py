@@ -2502,14 +2502,17 @@ def appointments():
             params.extend([f"%{search.lower()}%", f"%{normalize_contact(search)}%"])
         query += " ORDER BY created_at DESC, id DESC"
         rows = db().execute(query, params).fetchall()
-    waiting_requests = db().execute(
-        """
-        SELECT *
-        FROM client_requests
-        WHERE status='Waiting for schedule'
-        ORDER BY created_at ASC, id ASC
-        """
-    ).fetchall()
+    waiting_query = "SELECT * FROM client_requests WHERE status='Waiting for schedule'"
+    waiting_params = []
+    if selected_date:
+        waiting_query += " AND date(created_at)=?"; waiting_params.append(selected_date)
+    if category_filter:
+        waiting_query += " AND category=?"; waiting_params.append(category_filter)
+    if search:
+        waiting_query += " AND (LOWER(last_name || ' ' || first_name || ' ' || COALESCE(middle_initial, '')) LIKE ? OR contact_key LIKE ?)"
+        waiting_params.extend([f"%{search.lower()}%", f"%{normalize_contact(search)}%"])
+    waiting_query += " ORDER BY created_at ASC, id ASC"
+    waiting_requests = db().execute(waiting_query, waiting_params).fetchall()
     rejected_requests = []
     rejected_request_count = db().execute(
         "SELECT COUNT(*) FROM client_requests WHERE status='Rejected'"

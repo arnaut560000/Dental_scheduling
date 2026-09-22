@@ -31,6 +31,23 @@
   </nav>
 
   {% if client_section == 'pending' %}
+    <form class="filters card client-record-filters" method="get">
+      <input type="hidden" name="section" value="pending">
+      <div class="client-filter-fields">
+        <label>Search client or phone<input type="search" name="search" value="{{ search }}" placeholder="Name or 11-digit phone"></label>
+        <label>Date<input type="date" name="date" value="{{ selected_date }}"></label>
+        <label>
+          Client sector
+          <select name="category">
+            <option value="">All sectors</option>
+            {% for item in categories %}
+              <option value="{{ item }}" {% if selected_category == item %}selected{% endif %}>{{ item }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <button type="submit">Search records</button>
+      </div>
+    </form>
     <section class="card table-card">
       <div class="section-summary">
         <div>
@@ -69,23 +86,27 @@
   {% else %}
     <form class="filters card client-record-filters" method="get">
       <input type="hidden" name="section" value="{{ client_section }}">
-      <label>Search client or phone<input type="search" name="search" value="{{ search }}" placeholder="Name or 11-digit phone"></label>
-      <label>Date<input type="date" name="date" value="{{ selected_date }}"></label>
-      <label>
-        Client sector
-        <select name="category">
-          <option value="">All sectors</option>
-          {% for item in categories %}
-            <option value="{{ item }}" {% if selected_category == item %}selected{% endif %}>{{ item }}</option>
-          {% endfor %}
-        </select>
-      </label>
-      <button>Search records</button>
+      <div class="client-filter-fields">
+        <label>Search client or phone<input type="search" name="search" value="{{ search }}" placeholder="Name or 11-digit phone"></label>
+        <label>Date<input type="date" name="date" value="{{ selected_date }}"></label>
+        <label>
+          Client sector
+          <select name="category">
+            <option value="">All sectors</option>
+            {% for item in categories %}
+              <option value="{{ item }}" {% if selected_category == item %}selected{% endif %}>{{ item }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <button type="submit">Search records</button>
+      </div>
       {% if client_section == 'approved' %}
-        <button class="secondary-button" id="add-client-button" type="button">Add client</button>
-      {% endif %}
-      {% if selected_date and session.role == 'admin' %}
-        <a class="button-link secondary" href="{{ url_for('export_day', date=selected_date) }}">Export this day</a>
+        <div class="client-filter-actions">
+          <button class="secondary-button" id="add-client-button" type="button">Add approved client</button>
+          {% if selected_date and session.role == 'admin' %}
+            <a class="button-link secondary" href="{{ url_for('export_day', date=selected_date) }}">Export this day</a>
+          {% endif %}
+        </div>
       {% endif %}
     </form>
 
