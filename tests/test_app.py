@@ -757,6 +757,7 @@ class SchedulingSystemTests(unittest.TestCase):
         self.assertIn(scheduling_app.REGISTRATION_MODE_MIGRATION, versions)
         self.assertIn(scheduling_app.REQUEST_SUBMITTED_HISTORY_MIGRATION, versions)
         self.assertIn(scheduling_app.GENERAL_PUBLIC_CATEGORY_MIGRATION, versions)
+        self.assertIn(scheduling_app.ID_DOCUMENT_MIGRATION, versions)
 
         with scheduling_app.app.app_context():
             appointment_columns = scheduling_app.table_columns(
@@ -766,6 +767,14 @@ class SchedulingSystemTests(unittest.TestCase):
         self.assertIn("texted", appointment_columns)
         self.assertIn("called", appointment_columns)
         self.assertIn("registration_mode", appointment_columns)
+
+        with scheduling_app.app.app_context():
+            request_columns = scheduling_app.table_columns(
+                scheduling_app.db(), "client_requests"
+            )
+        self.assertIn("id_document_name", request_columns)
+        self.assertIn("id_document_mime", request_columns)
+        self.assertIn("id_document_data", request_columns)
 
         with scheduling_app.app.app_context():
             history_columns = scheduling_app.table_columns(
@@ -867,21 +876,20 @@ class SchedulingSystemTests(unittest.TestCase):
         self.assertEqual(payload["max"], 3)
         self.assertEqual([slot["time"] for slot in payload["slots"]], ["09:00", "09:30"])
 
-    def test_dashboard_uses_the_saved_limit_and_active_appointments_only(self):
-        with scheduling_app.app.app_context():
-            scheduling_app.db().execute(
-                "UPDATE clinic_settings SET setting_value='4' WHERE setting_key='daily_limit'"
-            )
-            scheduling_app.db().commit()
+    def test_dashboard_shows_the_selected_day_and_active_appointments_only(self):
         appointment_date = self.next_monday()
         self.insert_appointment(appointment_date, "08:00", "Approved")
         self.insert_appointment(appointment_date, "08:15", "Cancelled")
         self.sign_in_as_scheduler()
 
-        page = self.client.get("/admin")
-        self.assertIn(b"1/4", page.data)
-        self.assertNotIn(b"2/4", page.data)
+        page = self.client.get(f"/admin?date={appointment_date.isoformat()}")
+        self.assertIn(b"APPOINTMENT CALENDAR", page.data)
+        self.assertIn(b"Appointments for", page.data)
+        self.assertIn(b"08:00 AM", page.data)
+        self.assertIn(b"Clients by sector", page.data)
+        self.assertIn(b"Upcoming Philippine holidays", page.data)
         self.assertNotIn(b"Cancelled</span>", page.data)
+        self.assertNotIn(b"Upcoming clinic capacity", page.data)
         self.assertNotIn(b"Clinic analytics", page.data)
 
         self.assertEqual(self.client.get("/admin/analytics").status_code, 302)

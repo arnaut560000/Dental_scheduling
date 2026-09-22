@@ -1,14 +1,16 @@
 {% extends 'base.html' %}
 
-{% block title %}Dashboard . Talavera E-dental{% endlock %}
+{% block title %}Dashboard · Talavera E-dental{% endblock %}
 
-{% block context %}
+{% block content %}
   <div class="dashboard-welcome">
     <div>
       <p class="eyebrow">MUNICIPAL DENTAL SERVICE</p>
       <h1>Good day, {{ session.display_name or session.username }}!</h1>
       <p>Manage client requests, schedules, and clinic operations in one place.</p>
     </div>
+    <a class="button-link" href="{{ url_for('appointments', section='pending') }}">Review requests</a>
+  </div>
 
   <div class="dashboard-main-grid">
     <section class="card dashboard-calendar-card">
@@ -18,19 +20,14 @@
           <h2>{{ displayed_month_label }}</h2>
         </div>
         <div class="calendar-month-actions">
-          <a href="{{ url_for('dashboard', month=previous_month) }}" aria-label="Previous month"><</a>
+          <a href="{{ url_for('dashboard', month=previous_month) }}" aria-label="Previous month">‹</a>
           <a href="{{ url_for('dashboard', date=selected_date) }}">Today</a>
-          <a href="{{ url_for('dashboard', month=next_month) }}" aria-label="Next month">></a>
+          <a href="{{ url_for('dashboard', month=next_month) }}" aria-label="Next month">›</a>
         </div>
       </div>
-
       <form class="dashboard-date-picker" method="get">
-        <label>
-          View appointments for
-          <input type="date" name="date" value="{{ selected_date }}" onchange="this.form.submit()">
-        </label>
+        <label>View appointments for<input type="date" name="date" value="{{ selected_date }}" onchange="this.form.submit()"></label>
       </form>
-
       <div class="dashboard-calendar-weekdays">
         <span>Sun</span><span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span>
       </div>
@@ -39,13 +36,7 @@
           {% for day in week %}
             {% if day %}
               {% set day_value = '%04d-%02d-%02d'|format(calendar_year, calendar_month, day) %}
-              <a
-                class="dashboard-calendar-day {% if day_value == selected_date %}selected{% endif %} {% if day_value in booked_dates %}has-appointments{% endif %}"
-                href="{{ url_for('dashboard', date=day_value) }}"
-                aria-label="View {{ day_value }}"
-              >
-               {{ day }}
-              </a>
+              <a class="dashboard-calendar-day {% if day_value == selected_date %}selected{% endif %} {% if day_value in booked_dates %}has-appointments{% endif %}" href="{{ url_for('dashboard', date=day_value) }}" aria-label="View {{ day_value }}">{{ day }}</a>
             {% else %}
               <span class="dashboard-calendar-empty"></span>
             {% endif %}
@@ -63,7 +54,104 @@
         </div>
         <a class="text-link" href="{{ url_for('appointments', section='approved', date=selected_date) }}">View clients</a>
       </div>
-     
+      {% if selected_day_appointments %}
+        <div class="dashboard-table-wrap">
+          <table>
+            <thead><tr><th>Time</th><th>Client</th><th>Sector</th><th>Status</th></tr></thead>
+            <tbody>
+              {% for appointment in selected_day_appointments %}
+                <tr>
+                  <td><strong>{{ appointment.appointment_time|time12 }}</strong></td>
+                  <td>{{ appointment.last_name }}, {{ appointment.first_name }}</td>
+                  <td>{{ appointment.category }}</td>
+                  <td><span class="badge approved">{{ appointment.status }}</span></td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% else %}
+        <p class="empty">No active appointments for this date.</p>
+      {% endif %}
+    </section>
+  </div>
 
-    
+  <div class="dashboard-bottom-grid">
+    <section class="card">
+      <div class="dashboard-card-heading">
+        <div>
+          <p class="eyebrow">RECENT REQUESTS</p>
+          <h2>Latest client submissions</h2>
+        </div>
+        <a class="text-link" href="{{ url_for('appointments', section='pending') }}">View all</a>
+      </div>
+      {% if recent_requests %}
+        <div class="recent-request-list">
+          {% for client_request in recent_requests %}
+            <article>
+              <div class="request-avatar">{{ client_request.first_name[:1] }}{{ client_request.last_name[:1] }}</div>
+              <div>
+                <strong>{{ client_request.last_name }}, {{ client_request.first_name }}</strong>
+                <small>{{ client_request.created_at|manila_datetime }}</small>
+              </div>
+              <span class="badge">{{ client_request.category }}</span>
+            </article>
+          {% endfor %}
+        </div>
+      {% else %}
+        <p class="empty">No client requests yet.</p>
+      {% endif %}
+    </section>
+
+    <section class="card">
+      <div class="dashboard-card-heading">
+        <div>
+          <p class="eyebrow">SERVICE STATISTICS</p>
+          <h2>Clients by sector</h2>
+        </div>
+      </div>
+      {% if service_statistics %}
+        <div class="sector-statistics">
+          {% for item in service_statistics %}
+            <div>
+              <div><span>{{ item.category }}</span><strong>{{ item.count }}</strong></div>
+              <i><b style="width: {{ (item.count / service_total * 100)|round|int }}%"></b></i>
+            </div>
+          {% endfor %}
+        </div>
+        <p class="notice">Includes clients with approved or completed appointments.</p>
+      {% else %}
+        <p class="empty">No approved or completed clients yet.</p>
+      {% endif %}
+    </section>
+
+    <div class="dashboard-side-stack">
+      <section class="card quick-actions-card">
+        <p class="eyebrow">QUICK ACTIONS</p>
+        <h2>Clinic actions</h2>
+        <a class="button-link" href="{{ url_for('appointments', section='pending') }}">Review pending requests</a>
+        <a class="button-link secondary" href="{{ url_for('appointments', section='approved') }}">Open client records</a>
+        {% if session.role == 'admin' %}
+          <a class="button-link secondary" href="{{ url_for('clinic_settings_page') }}">Clinic settings</a>
+        {% endif %}
+      </section>
+      <section class="card announcement-card">
+        <div class="dashboard-card-heading">
+          <div>
+            <p class="eyebrow">ANNOUNCEMENTS</p>
+            <h2>Upcoming Philippine holidays</h2>
+          </div>
+        </div>
+        {% for holiday in upcoming_holidays %}
+          <article class="holiday-announcement">
+            <strong>{{ holiday.name }}</strong>
+            <span>{{ holiday.date.strftime('%d %B %Y') }} · {{ holiday.type }}</span>
+          </article>
+        {% else %}
+          <p class="empty">No holiday announcement is currently listed.</p>
+        {% endfor %}
+        <p class="notice">Block clinic dates in Settings if the clinic will close for a holiday.</p>
+      </section>
+    </div>
+  </div>
 {% endblock %}

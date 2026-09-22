@@ -1,3 +1,4 @@
+import calendar
 import csv
 import io
 import logging
@@ -90,6 +91,33 @@ ALLOWED_ID_DOCUMENTS = {
 }
 VALID_GENDERS = {"Female", "Male", "Others"}
 VALID_REGISTRATION_MODES = {"Email", "Form", "Online", "Text"}
+PHILIPPINE_HOLIDAYS = [
+    {"date": date(2026, 11, 1), "name": "All Saints' Day", "type": "Special non-working day"},
+    {"date": date(2026, 11, 2), "name": "All Souls' Day", "type": "Additional special non-working day"},
+    {"date": date(2026, 11, 30), "name": "Bonifacio Day", "type": "Regular holiday"},
+    {"date": date(2026, 12, 8), "name": "Feast of the Immaculate Conception", "type": "Special non-working day"},
+    {"date": date(2026, 12, 24), "name": "Christmas Eve", "type": "Additional special non-working day"},
+    {"date": date(2026, 12, 25), "name": "Christmas Day", "type": "Regular holiday"},
+    {"date": date(2026, 12, 30), "name": "Rizal Day", "type": "Regular holiday"},
+    {"date": date(2026, 12, 31), "name": "Last Day of the Year", "type": "Special non-working day"},
+    {"date": date(2027, 1, 1), "name": "New Year's Day", "type": "Regular holiday"},
+    {"date": date(2027, 2, 6), "name": "Chinese New Year", "type": "Additional special non-working day"},
+    {"date": date(2027, 3, 25), "name": "Maundy Thursday", "type": "Regular holiday"},
+    {"date": date(2027, 3, 26), "name": "Good Friday", "type": "Regular holiday"},
+    {"date": date(2027, 4, 9), "name": "Araw ng Kagitingan", "type": "Regular holiday"},
+    {"date": date(2027, 5, 1), "name": "Labor Day", "type": "Regular holiday"},
+    {"date": date(2027, 6, 12), "name": "Independence Day", "type": "Regular holiday"},
+    {"date": date(2027, 8, 21), "name": "Ninoy Aquino Day", "type": "Special non-working day"},
+    {"date": date(2027, 8, 30), "name": "National Heroes Day", "type": "Regular holiday"},
+    {"date": date(2027, 11, 1), "name": "All Saints' Day", "type": "Special non-working day"},
+    {"date": date(2027, 11, 2), "name": "All Souls' Day", "type": "Additional special non-working day"},
+    {"date": date(2027, 11, 30), "name": "Bonifacio Day", "type": "Regular holiday"},
+    {"date": date(2027, 12, 8), "name": "Feast of the Immaculate Conception", "type": "Special non-working day"},
+    {"date": date(2027, 12, 24), "name": "Christmas Eve", "type": "Additional special non-working day"},
+    {"date": date(2027, 12, 25), "name": "Christmas Day", "type": "Regular holiday"},
+    {"date": date(2027, 12, 30), "name": "Rizal Day", "type": "Regular holiday"},
+    {"date": date(2027, 12, 31), "name": "Last Day of the Year", "type": "Special non-working day"},
+]
 BARANGAYS = [
     "Andal Alino (Pob.)",
     "Bagong Sikat",
@@ -1744,56 +1772,89 @@ def logout():
 @app.get("/admin")
 @roles_required("admin", "scheduler")
 def dashboard():
-    today = clinic_today().isoformat()
+    today_date = clinic_today()
     database = db()
+    requested_date = request.args.get("date", "")
+    requested_month = request.args.get("month", "")
+    try:
+        selected_date = date.fromisoformat(requested_date) if requested_date else today_date
+    except ValueError:
+        selected_date = today_date
+    try:
+        displayed_month = datetime.strptime(requested_month, "%Y-%m").date().replace(day=1)
+        if not requested_date:
+            selected_date = displayed_month
+    except ValueError:
+        displayed_month = selected_date.replace(day=1)
 
-    totals = {
-        "all": database.execute("SELECT COUNT(*) FROM client_requests").fetchone()[0],
-        "pending": database.execute(
-            "SELECT COUNT(*) FROM client_requests WHERE status='Waiting for schedule'"
-        ).fetchone()[0],
-        "today": database.execute(
+    next_month = (displayed_month.replace(day=28) + timedelta(days=4)).replace(day=1)
+    previous_month = displayed_month - timedelta(days=1)
+    month_end = next_month - timedelta(days=1)
+    selected_date_value = selected_date.isoformat()
+
+    booked_dates = {
+        row["appointment_date"]
+        for row in database.execute(
             """
-            SELECT COUNT(*) FROM appointments
-            WHERE appointment_date=? AND status IN ('Pending', 'Approved')
+            SELECT DISTINCT appointment_date
+            FROM appointments
+            WHERE appointment_date BETWEEN ? AND ?
+              AND status IN ('Pending', 'Approved')
             """,
-            (today,),
-        ).fetchone()[0],
-        "approved": database.execute(
-            "SELECT COUNT(*) FROM client_requests WHERE status='Scheduled'"
-        ).fetchone()[0],
+            (displayed_month.isoformat(), month_end.isoformat()),
+        ).fetchall()
     }
 
-    upcoming = database.execute(
+    selected_day_appointments = database.execute(
         """
-        SELECT *
+        SELECT appointment_time, last_name, first_name, category, status
         FROM appointments
-        WHERE appointment_date >= ? AND status IN ('Pending', 'Approved')
-        ORDER BY appointment_date, appointment_time
-        LIMIT 8
+        WHERE appointment_date=? AND status IN ('Pending', 'Approved')
+        ORDER BY appointment_time, last_name, first_name
         """,
-        (today,),
+        (selected_date_value,),
     ).fetchall()
 
-    daily = database.execute(
+    recent_requests = database.execute(
         """
-        SELECT appointment_date, COUNT(*) AS count
-        FROM appointments
-        WHERE appointment_date >= ? AND status IN ('Pending', 'Approved')
-        GROUP BY appointment_date
-        ORDER BY appointment_date
-        LIMIT 7
+        SELECT last_name, first_name, category, status, created_at
+        FROM client_requests
+        ORDER BY created_at DESC, id DESC
+        LIMIT 5
         """,
-        (today,),
     ).fetchall()
+
+    service_statistics = database.execute(
+        """
+        SELECT category, COUNT(*) AS count
+        FROM appointments
+        WHERE status IN ('Approved', 'Finished')
+        GROUP BY category
+        ORDER BY count DESC, category ASC
+        """
+    ).fetchall()
+    upcoming_holidays = [
+        holiday for holiday in PHILIPPINE_HOLIDAYS if holiday["date"] >= today_date
+    ][:4]
 
     return render_template(
         "dashboard.html",
-        totals=totals,
-        upcoming=upcoming,
-        daily=daily,
-        today=today,
-        daily_limit=clinic_configuration()["daily_limit"],
+        selected_date=selected_date_value,
+        selected_date_label=selected_date.strftime("%A, %d %B %Y"),
+        displayed_month_label=displayed_month.strftime("%B %Y"),
+        previous_month=previous_month.strftime("%Y-%m"),
+        next_month=next_month.strftime("%Y-%m"),
+        calendar_year=displayed_month.year,
+        calendar_month=displayed_month.month,
+        calendar_weeks=calendar.Calendar(firstweekday=6).monthdayscalendar(
+            displayed_month.year, displayed_month.month
+        ),
+        booked_dates=booked_dates,
+        selected_day_appointments=selected_day_appointments,
+        recent_requests=recent_requests,
+        service_statistics=service_statistics,
+        service_total=sum(item["count"] for item in service_statistics),
+        upcoming_holidays=upcoming_holidays,
     )
 
 
