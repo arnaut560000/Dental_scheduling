@@ -23,7 +23,7 @@
       <p>We have received the maximum of {{ max_daily_requests }} online requests for today. Please submit your request tomorrow.</p>
     </section>
   {% else %}
-  <form class="card appointment-form" method="post">
+  <form class="card appointment-form" method="post" enctype="multipart/form-data">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 
     <div class="form-intro">
@@ -136,10 +136,25 @@
       </fieldset>
     </section>
 
+    <section id="id-upload-section" class="form-section id-upload-section" aria-labelledby="id-upload-title" hidden>
+      <div class="section-heading">
+        <span class="section-number">4</span>
+        <div>
+          <h3 id="id-upload-title">Upload valid ID</h3>
+          <p>PWD and Senior Citizen requests need a valid ID so the clinic can verify the selected sector.</p>
+        </div>
+      </div>
+      <label class="full-width">
+        Valid ID <strong>*</strong>
+        <input id="id-document" type="file" name="id_document" accept=".jpg,.jpeg,.png,.webp,.pdf">
+        <small>Upload a clear JPG, PNG, WebP, or PDF file. Maximum file size: 5 MB.</small>
+      </label>
+    </section>
+
     <div class="request-submit-area">
       <label class="consent-check">
         <input type="checkbox" name="privacy_consent" required {% if request.form.privacy_consent %}checked{% endif %}>
-        <span>I have read and agree to the <a href="{{ url_for('privacy_notice') }}" target="_blank" rel="noopener">Privacy Notice</a> and allow the clinic to use my information to process this appointment request.</span>
+        <span>I have read and agree to the <a href="{{ url_for('privacy_notice') }}" target="_blank" rel="noopener">Privacy Notice</a> and allow the clinic to use my information, including an eligibility ID when required, to process this appointment request.</span>
       </label>
       <div class="submit-row">
         <p class="notice">A scheduler will manually assign your appointment date and time. One request per contact number is allowed every {{ cooldown_days }} days.</p>
@@ -152,14 +167,30 @@
 
 {% block scripts %}
   <script>
-    document.querySelectorAll('input[name="category"]').forEach(function (checkbox) {
+    const categoryInputs = document.querySelectorAll('input[name="category"]');
+    const idUploadSection = document.getElementById('id-upload-section');
+    const idDocumentInput = document.getElementById('id-document');
+
+    function updateIdUploadRequirement() {
+      const selectedCategory = Array.from(categoryInputs).find(function (input) {
+        return input.checked;
+      });
+      const needsId = selectedCategory && ['PWD', 'Senior Citizen'].includes(selectedCategory.value);
+      idUploadSection.hidden = !needsId;
+      idDocumentInput.required = Boolean(needsId);
+      if (!needsId) idDocumentInput.value = '';
+    }
+
+    categoryInputs.forEach(function (checkbox) {
       checkbox.addEventListener('change', function () {
         if (checkbox.checked) {
-          document.querySelectorAll('input[name="category"]').forEach(function (other) {
+          categoryInputs.forEach(function (other) {
             if (other !== checkbox) other.checked = false;
           });
         }
+        updateIdUploadRequirement();
       });
     });
+    updateIdUploadRequirement();
   </script>
 {% endblock %}

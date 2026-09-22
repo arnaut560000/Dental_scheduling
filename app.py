@@ -13,12 +13,14 @@ from zoneinfo import ZoneInfo
 from flask import (
     Flask,
     Response,
+    abort,
     flash,
     g,
     redirect,
     render_template,
     request,
     session,
+    send_file,
     url_for,
 )
 from flask_limiter import Limiter
@@ -31,7 +33,9 @@ from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.lib.units import mm
 from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+from werkzeug.exceptions import RequestEntityTooLarge
 from werkzeug.security import check_password_hash, generate_password_hash
+from werkzeug.utils import secure_filename
 
 app = Flask(__name__)
 secret_key = os.environ.get("SECRET_KEY")
@@ -45,7 +49,11 @@ app.config.update(
         "DATABASE_PATH",
         os.path.join(app.root_path, "dental_schedule.db"),
     ),
-    MAX_CONTENT_LENGTH=64 * 1024,
+    # IDs are collected only for PWD and Senior Citizen requests. Keep the
+    # complete request small enough for a public form while allowing a clear
+    # photo or PDF of an eligibility ID.
+    MAX_CONTENT_LENGTH=(5 * 1024 * 1024) + (64 * 1024),
+    MAX_ID_DOCUMENT_BYTES=5 * 1024 * 1024,
     CLINIC_NAME=os.environ.get("CLINIC_NAME", "SmileCare"),
     PRIVACY_CONTACT=os.environ.get("PRIVACY_CONTACT", "the clinic administrator"),
     PUBLIC_URL=os.environ.get("PUBLIC_URL", "").rstrip("/"),
@@ -69,9 +77,17 @@ MAX_PER_DAY = 15
 SLOT_MINUTES = 15
 MAX_PUBLIC_REQUESTS_PER_DAY = 50
 REQUEST_COOLDOWN_DAYS = 30
-PRIVACY_NOTICE_VERSION = "2026-09-13"
+PRIVACY_NOTICE_VERSION = "2026-09-22"
 CLINIC_DAYS = {0, 2, 4}  # Monday, Wednesday, Friday
 VALID_CATEGORIES = {"General Public", "PWD", "Senior Citizen", "Pregnant Woman"}
+ID_DOCUMENT_REQUIRED_CATEGORIES = {"PWD", "Senior Citizen"}
+ALLOWED_ID_DOCUMENTS = {
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".png": "image/png",
+    ".webp": "image/webp",
+    ".pdf": "application/pdf",
+}
 VALID_GENDERS = {"Female", "Male", "Others"}
 VALID_REGISTRATION_MODES = {"Email", "Form", "Online", "Text"}
 BARANGAYS = [
@@ -264,6 +280,9 @@ def create_postgres_schema(database):
             privacy_consent INTEGER NOT NULL DEFAULT 0,
             consent_at TIMESTAMPTZ,
             privacy_notice_version TEXT,
+            id_document_name TEXT,
+            id_document_mime TEXT,
+            id_document_data BYTEA,
             status TEXT NOT NULL DEFAULT 'Waiting for schedule', status_reason TEXT,
             scheduled_appointment_id BIGINT UNIQUE, scheduled_at TIMESTAMPTZ,
             created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -353,6 +372,9 @@ def apply_initial_schema(database):
             privacy_consent INTEGER NOT NULL DEFAULT 0,
             consent_at TEXT,
             privacy_notice_version TEXT,
+            id_document_name TEXT,
+            id_document_mime TEXT,
+            id_document_data BLOB,
             status TEXT NOT NULL DEFAULT 'Waiting for schedule',
             status_reason TEXT,
             scheduled_appointment_id INTEGER UNIQUE,
@@ -476,6 +498,7 @@ CONTACT_METHOD_FLAGS_MIGRATION = "006_appointment_contact_method_flags"
 REGISTRATION_MODE_MIGRATION = "007_appointment_registration_mode"
 REQUEST_SUBMITTED_HISTORY_MIGRATION = "008_appointment_request_submitted_history"
 GENERAL_PUBLIC_CATEGORY_MIGRATION = "009_general_public_category"
+ID_DOCUMENT_MIGRATION = "010_client_id_document"
 
 DEFAULT_CLINIC_SETTINGS = {
     "clinic_days": "0,2,4",
@@ -703,6 +726,20 @@ def migrate_general_public_category(database):
     )
 
 
+def migrate_client_id_document(database):
+    """Add restricted eligibility-ID storage for PWD and Senior Citizen requests."""
+    columns = table_columns(database, "client_requests")
+    document_type = "BYTEA" if using_postgres(database) else "BLOB"
+    if "id_document_name" not in columns:
+        database.execute("ALTER TABLE client_requests ADD COLUMN id_document_name TEXT")
+    if "id_document_mime" not in columns:
+        database.execute("ALTER TABLE client_requests ADD COLUMN id_document_mime TEXT")
+    if "id_document_data" not in columns:
+        database.execute(
+            f"ALTER TABLE client_requests ADD COLUMN id_document_data {document_type}"
+        )
+
+
 def clinic_configuration():
     """Return validated scheduling settings, cached for the current request."""
     if "clinic_configuration" in g:
@@ -849,6 +886,10 @@ def init_db():
             migrate_general_public_category(database)
             record_migration(database, GENERAL_PUBLIC_CATEGORY_MIGRATION)
             completed.add(GENERAL_PUBLIC_CATEGORY_MIGRATION)
+        if ID_DOCUMENT_MIGRATION not in completed:
+            migrate_client_id_document(database)
+            record_migration(database, ID_DOCUMENT_MIGRATION)
+            completed.add(ID_DOCUMENT_MIGRATION)
     finally:
         if locked:
             database.execute("SELECT pg_advisory_unlock(83742619)")
@@ -1270,6 +1311,12 @@ def handle_csrf_error(_error):
     return redirect(url_for("request_appointment"))
 
 
+@app.errorhandler(RequestEntityTooLarge)
+def handle_request_too_large(_error):
+    flash("The uploaded ID must be 5 MB or smaller. Please choose a smaller file.", "error")
+    return redirect(url_for("request_appointment"))
+
+
 @app.get("/privacy")
 def privacy_notice():
     return render_template("privacy.html", privacy_notice_version=PRIVACY_NOTICE_VERSION)
@@ -1459,11 +1506,37 @@ def manila_datetime(value):
     return format_manila_datetime(value)
 
 
+def validate_id_document(upload):
+    """Return safe ID metadata and bytes, or a message suitable for the public form."""
+    if not upload or not upload.filename:
+        return None, "Upload a valid ID for a PWD or Senior Citizen request."
+
+    filename = secure_filename(upload.filename)
+    extension = os.path.splitext(filename)[1].lower()
+    expected_mime = ALLOWED_ID_DOCUMENTS.get(extension)
+    actual_mime = (upload.mimetype or "").lower()
+    if not filename or not expected_mime or actual_mime != expected_mime:
+        return None, "Upload a JPG, PNG, WebP, or PDF file for the client ID."
+
+    contents = upload.read(app.config["MAX_ID_DOCUMENT_BYTES"] + 1)
+    if not contents:
+        return None, "The uploaded ID file is empty. Please choose the file again."
+    if len(contents) > app.config["MAX_ID_DOCUMENT_BYTES"]:
+        return None, "The uploaded ID must be 5 MB or smaller."
+
+    return {
+        "id_document_name": filename,
+        "id_document_mime": expected_mime,
+        "id_document_data": contents,
+    }, None
+
+
 @app.route("/", methods=["GET", "POST"])
 @limiter.limit("20 per day", methods=["POST"])
 @limiter.limit("5 per hour", methods=["POST"])
 def request_appointment():
     if request.method == "POST":
+        id_document_upload = request.files.get("id_document")
         fields = {
             key: request.form.get(key, "").strip()
             for key in [
@@ -1479,6 +1552,14 @@ def request_appointment():
         fields["category"] = category_values[0] if len(category_values) == 1 else ""
         fields["contact_key"] = normalize_contact(fields["contact_number"])
         fields["privacy_consent"] = request.form.get("privacy_consent") == "on"
+        id_document = None
+        document_error = None
+        if fields["category"] in ID_DOCUMENT_REQUIRED_CATEGORIES:
+            id_document, document_error = validate_id_document(id_document_upload)
+            if id_document:
+                fields.update(id_document)
+        elif id_document_upload and id_document_upload.filename:
+            document_error = "An ID document is required only for PWD or Senior Citizen requests."
         cooldown_cutoff = (clinic_now() - timedelta(days=REQUEST_COOLDOWN_DAYS)).strftime(
             "%Y-%m-%d %H:%M:%S"
         )
@@ -1514,6 +1595,8 @@ def request_appointment():
             flash("Enter a valid birth date.", "error")
         elif len(category_values) != 1 or fields["category"] not in VALID_CATEGORIES:
             flash("Choose exactly one client sector.", "error")
+        elif document_error:
+            flash(document_error, "error")
         elif fields["gender"] not in VALID_GENDERS:
             flash("Choose a valid gender.", "error")
         elif not valid_email(fields["email"]):
@@ -1552,14 +1635,17 @@ def request_appointment():
                         INSERT INTO client_requests (
                             request_code, last_name, first_name, middle_initial, birth_date, gender,
                             barangay, category, contact_number, contact_key, email,
-                            privacy_consent, consent_at, privacy_notice_version
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?)
+                            privacy_consent, consent_at, privacy_notice_version,
+                            id_document_name, id_document_mime, id_document_data
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?, ?, ?, ?)
                         """,
                         (
                             fields["request_code"], fields["last_name"], fields["first_name"],
                             fields["middle_initial"], fields["birth_date"], fields["gender"], fields["barangay"],
                             fields["category"], fields["contact_number"], fields["contact_key"],
                             fields["email"], int(fields["privacy_consent"]), PRIVACY_NOTICE_VERSION,
+                            fields.get("id_document_name"), fields.get("id_document_mime"),
+                            fields.get("id_document_data"),
                         ),
                     )
                     database.commit()
@@ -1580,6 +1666,31 @@ def request_appointment():
         max_daily_requests=MAX_PUBLIC_REQUESTS_PER_DAY,
         request_limit_reached=daily_request_count >= MAX_PUBLIC_REQUESTS_PER_DAY,
         today=clinic_today().isoformat(),
+    )
+
+
+@app.get("/admin/requests/<int:request_id>/id-document")
+@roles_required("admin")
+def view_client_id_document(request_id):
+    """Let administrators review an eligibility ID without exposing it to schedulers."""
+    client_request = db().execute(
+        """
+        SELECT id_document_name, id_document_mime, id_document_data
+        FROM client_requests
+        WHERE id=?
+        """,
+        (request_id,),
+    ).fetchone()
+    if not client_request or not client_request["id_document_data"]:
+        abort(404)
+
+    audit("client_id_document_viewed", details=f"client_request_id={request_id}")
+    db().commit()
+    return send_file(
+        io.BytesIO(bytes(client_request["id_document_data"])),
+        mimetype=client_request["id_document_mime"] or "application/octet-stream",
+        as_attachment=False,
+        download_name=client_request["id_document_name"] or "client-id-document",
     )
 
 

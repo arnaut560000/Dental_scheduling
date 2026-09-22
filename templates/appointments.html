@@ -54,6 +54,9 @@
                 <td>
                   <button class="small schedule-button" type="button" data-request-id="{{ client_request.id }}" data-client-name="{{ client_request.last_name }}, {{ client_request.first_name }} {{ client_request.middle_initial or '' }}">Schedule client</button>
                   <button class="small secondary-button reject-button" type="button" data-request-id="{{ client_request.id }}" data-client-name="{{ client_request.last_name }}, {{ client_request.first_name }} {{ client_request.middle_initial or '' }}">Reject request</button>
+                  {% if session.role == 'admin' and client_request.id_document_data %}
+                    <a class="small secondary-button" href="{{ url_for('view_client_id_document', request_id=client_request.id) }}" target="_blank" rel="noopener">View ID</a>
+                  {% endif %}
                 </td>
               </tr>
             {% endfor %}

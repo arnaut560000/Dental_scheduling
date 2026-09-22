@@ -1,6 +1,7 @@
 """Regression tests for the public request and staff scheduling workflow."""
 
 import os
+import io
 import sqlite3
 import tempfile
 import unittest
@@ -133,6 +134,48 @@ class SchedulingSystemTests(unittest.TestCase):
             ).fetchone()
         self.assertEqual(row["gender"], "Others")
         self.assertEqual(row["privacy_notice_version"], scheduling_app.PRIVACY_NOTICE_VERSION)
+
+    def test_pwd_request_requires_and_restricts_an_uploaded_id(self):
+        request_fields = {
+            "last_name": "Eligible",
+            "first_name": "Client",
+            "birth_date": "2000-01-01",
+            "gender": "Others",
+            "barangay": scheduling_app.BARANGAYS[0],
+            "category": "PWD",
+            "contact_number": "09171234570",
+            "privacy_consent": "on",
+        }
+        scheduling_app.limiter.reset()
+        missing_id = self.client.post("/", data=request_fields)
+        self.assertIn(b"Upload a valid ID", missing_id.data)
+
+        response = self.client.post(
+            "/",
+            data={
+                **request_fields,
+                "id_document": (io.BytesIO(b"%PDF-1.4 test document"), "pwd-id.pdf", "application/pdf"),
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b"REQUEST RECEIVED", response.data)
+        with scheduling_app.app.app_context():
+            request_row = scheduling_app.db().execute(
+                "SELECT id, id_document_name, id_document_mime, id_document_data FROM client_requests"
+            ).fetchone()
+        self.assertEqual(request_row["id_document_name"], "pwd-id.pdf")
+        self.assertEqual(request_row["id_document_mime"], "application/pdf")
+        self.assertEqual(bytes(request_row["id_document_data"]), b"%PDF-1.4 test document")
+
+        self.sign_in_as_scheduler()
+        denied = self.client.get(f"/admin/requests/{request_row['id']}/id-document")
+        self.assertEqual(denied.status_code, 302)
+
+        self.sign_in_as_admin()
+        document = self.client.get(f"/admin/requests/{request_row['id']}/id-document")
+        self.assertEqual(document.status_code, 200)
+        self.assertEqual(document.mimetype, "application/pdf")
+        self.assertEqual(document.data, b"%PDF-1.4 test document")
 
     def test_client_name_and_birth_date_inputs_reject_invalid_values(self):
         page = self.client.get("/")

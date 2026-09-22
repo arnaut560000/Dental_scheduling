@@ -347,6 +347,8 @@ dialog::backdrop { background: #0b2d6e80; }
 .calendar-weekdays, .calendar-days { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; text-align: center; }
 .calendar-weekdays { margin-bottom: 4px; color: var(--muted); font-size: 11px; font-weight: 800; }
 .calendar-day, .calendar-empty { min-height: 32px; }
+.id-upload-section { border-color: var(--yellow); background: var(--yellow-pale); }
+.id-upload-section[hidden] { display: none; }
 .calendar-day { margin: 0; padding: 4px; border: 1px solid transparent; border-radius: 7px; background: transparent; color: var(--muted); font-size: 13px; }
 .calendar-day:not(.unavailable):hover, .calendar-day.selected { border-color: var(--blue); background: var(--blue); color: #fff; }
 .calendar-day.unavailable { color: #9babc7; opacity: .55; cursor: not-allowed; }
