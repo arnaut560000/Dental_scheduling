@@ -35,7 +35,6 @@
           <a href="{{ url_for('appointments') }}">Clients</a>
           {% if session.role == 'admin' %}
             <a href="{{ url_for('accounts') }}">Accounts</a>
-            <a href="{{ url_for('analytics_page') }}">Analytics</a>
             <a href="{{ url_for('clinic_settings_page') }}">Settings</a>
             <a href="{{ url_for('audit_log') }}">Audit log</a>
           {% endif %}

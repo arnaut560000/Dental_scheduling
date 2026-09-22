@@ -891,17 +891,18 @@ class SchedulingSystemTests(unittest.TestCase):
         self.assertNotIn(b"Cancelled</span>", page.data)
         self.assertNotIn(b"Upcoming clinic capacity", page.data)
         self.assertNotIn(b"Clinic analytics", page.data)
+        self.assertNotIn(b">Analytics<", page.data)
 
-        self.assertEqual(self.client.get("/admin/analytics").status_code, 302)
         self.sign_in_as_admin()
-        analytics_page = self.client.get("/admin/analytics")
-        self.assertEqual(analytics_page.status_code, 200)
-        self.assertIn(b"Clinic analytics", analytics_page.data)
 
-    def test_administrator_exports_are_recorded_in_the_audit_log(self):
+    def test_analytics_page_and_exports_are_not_available(self):
         self.sign_in_as_admin()
-        self.assertEqual(self.client.get("/admin/analytics/export.csv").status_code, 200)
-        self.assertEqual(self.client.get("/admin/analytics/export.pdf").status_code, 200)
+        self.assertEqual(self.client.get("/admin/analytics").status_code, 404)
+        self.assertEqual(self.client.get("/admin/analytics/export.csv").status_code, 404)
+        self.assertEqual(self.client.get("/admin/analytics/export.pdf").status_code, 404)
+
+    def test_daily_schedule_export_is_recorded_in_the_audit_log(self):
+        self.sign_in_as_admin()
         self.assertEqual(self.client.get("/admin/export?date=2030-01-07").status_code, 200)
 
         with scheduling_app.app.app_context():
@@ -911,9 +912,7 @@ class SchedulingSystemTests(unittest.TestCase):
                     "SELECT action FROM audit_events WHERE user_id=?", (self.admin_id,)
                 ).fetchall()
             }
-        self.assertTrue({
-            "analytics_csv_exported", "analytics_pdf_exported", "daily_schedule_exported"
-        }.issubset(actions))
+        self.assertIn("daily_schedule_exported", actions)
 
     def test_audit_log_is_visible_only_to_administrators(self):
         with scheduling_app.app.app_context():
