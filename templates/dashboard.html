@@ -1,62 +1,69 @@
 {% extends 'base.html' %}
 
-{% block title %}Dashboard · SmileCare{% endblock %}
+{% block title %}Dashboard . Talavera E-dental{% endlock %}
 
-{% block content %}
-  <div class="page-title">
+{% block context %}
+  <div class="dashboard-welcome">
     <div>
-      <p class="eyebrow">STAFF OVERVIEW</p>
-      <h1>Today at the clinic</h1>
+      <p class="eyebrow">MUNICIPAL DENTAL SERVICE</p>
+      <h1>Good day, {{ session.display_name or session.username }}!</h1>
+      <p>Manage client requests, schedules, and clinic operations in one place.</p>
     </div>
-    {% if session.role == 'admin' %}
-      <div class="export-actions">
-        <a class="button-link secondary" href="{{ url_for('analytics_page') }}">View analytics</a>
-        <a class="button-link" href="{{ url_for('export_day', date=today) }}">Export today’s list</a>
-      </div>
-    {% endif %}
-  </div>
 
-  <section class="stats">
-    <div><span>Total requests</span><b>{{ totals.all }}</b></div>
-    <div><span>Waiting for schedule</span><b>{{ totals.pending }}</b></div>
-    <div><span>Scheduled today</span><b>{{ totals.today }}</b></div>
-    <div><span>Clients approved</span><b>{{ totals.approved }}</b></div>
-  </section>
-
-  <div class="dashboard-grid">
-    <section class="card">
-      <h2>Next scheduled clients</h2>
-      {% if upcoming %}
-        <table>
-          <thead><tr><th>Date</th><th>Time</th><th>Client</th><th>Status</th></tr></thead>
-          <tbody>
-            {% for appointment in upcoming %}
-              <tr>
-                <td>{{ appointment.appointment_date }}</td>
-                <td>{{ appointment.appointment_time|time12 }}</td>
-                <td>{{ appointment.last_name }}, {{ appointment.first_name }}</td>
-                <td><span class="badge {{ appointment.status|lower|replace(' ', '-') }}">{{ appointment.status }}</span></td>
-              </tr>
-            {% endfor %}
-          </tbody>
-        </table>
-      {% else %}
-        <p class="empty">No upcoming clients yet.</p>
-      {% endif %}
-    </section>
-
-    <section class="card">
-      <h2>Upcoming clinic capacity</h2>
-      {% for day in daily %}
-        <div class="load">
-          <span>{{ day.appointment_date }}</span>
-          <div><i style="width: {{ (day.count / daily_limit * 100)|int }}%"></i></div>
-          <b>{{ day.count }}/{{ daily_limit }}</b>
+  <div class="dashboard-main-grid">
+    <section class="card dashboard-calendar-card">
+      <div class="dashboard-card-heading">
+        <div>
+          <p class="eyebrow">APPOINTMENT CALENDAR</p>
+          <h2>{{ displayed_month_label }}</h2>
         </div>
-      {% else %}
-        <p class="empty">No schedules yet.</p>
-      {% endfor %}
-    </section>
-  </div>
+        <div class="calendar-month-actions">
+          <a href="{{ url_for('dashboard', month=previous_month) }}" aria-label="Previous month"><</a>
+          <a href="{{ url_for('dashboard', date=selected_date) }}">Today</a>
+          <a href="{{ url_for('dashboard', month=next_month) }}" aria-label="Next month">></a>
+        </div>
+      </div>
 
+      <form class="dashboard-date-picker" method="get">
+        <label>
+          View appointments for
+          <input type="date" name="date" value="{{ selected_date }}" onchange="this.form.submit()">
+        </label>
+      </form>
+
+      <div class="dashboard-calendar-weekdays">
+        <span>Sun</span><span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span>
+      </div>
+      <div class="dashboard-calendar-grid">
+        {% for week in calendar_weeks %}
+          {% for day in week %}
+            {% if day %}
+              {% set day_value = '%04d-%02d-%02d'|format(calendar_year, calendar_month, day) %}
+              <a
+                class="dashboard-calendar-day {% if day_value == selected_date %}selected{% endif %} {% if day_value in booked_dates %}has-appointments{% endif %}"
+                href="{{ url_for('dashboard', date=day_value) }}"
+                aria-label="View {{ day_value }}"
+              >
+               {{ day }}
+              </a>
+            {% else %}
+              <span class="dashboard-calendar-empty"></span>
+            {% endif %}
+          {% endfor %}
+        {% endfor %}
+      </div>
+      <p class="dashboard-calendar-key"><span></span> Green dot: date with appointments</p>
+    </section>
+
+    <section class="card dashboard-appointments-card">
+      <div class="dashboard-card-heading">
+        <div>
+          <p class="eyebrow">DAILY SCHEDULE</p>
+          <h2>Appointments for {{ selected_date_label }}</h2>
+        </div>
+        <a class="text-link" href="{{ url_for('appointments', section='approved', date=selected_date) }}">View clients</a>
+      </div>
+     
+
+    
 {% endblock %}
