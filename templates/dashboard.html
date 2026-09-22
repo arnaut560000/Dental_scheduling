@@ -18,6 +18,19 @@
     </div>
   </header>
 
+  <section class="dashboard-overview-grid" aria-label="Clinic overview">
+    {% for metric in dashboard_metrics %}
+      <article class="dashboard-overview-card {{ metric.tone }}">
+        <span class="overview-icon" aria-hidden="true">{{ metric.icon }}</span>
+        <div>
+          <span>{{ metric.label }}</span>
+          <strong>{{ metric.value }}</strong>
+          <small>{{ metric.note }}</small>
+        </div>
+      </article>
+    {% endfor %}
+  </section>
+
   <div class="dashboard-main-grid">
     <section class="card dashboard-calendar-card dashboard-elevated-card">
       <div class="dashboard-card-heading">
@@ -66,10 +79,11 @@
       {% if selected_day_appointments %}
         <div class="dashboard-table-wrap">
           <table>
-            <thead><tr><th>Time</th><th>Client</th><th>Sector</th><th>Status</th></tr></thead>
+            <thead><tr><th>#</th><th>Time</th><th>Client</th><th>Sector</th><th>Status</th></tr></thead>
             <tbody>
               {% for appointment in selected_day_appointments %}
                 <tr>
+                  <td>{{ loop.index }}</td>
                   <td><strong class="schedule-time">{{ appointment.appointment_time|time12 }}</strong></td>
                   <td><strong class="schedule-client">{{ appointment.last_name }}, {{ appointment.first_name }}</strong></td>
                   <td><span class="sector-pill">{{ appointment.category }}</span></td>

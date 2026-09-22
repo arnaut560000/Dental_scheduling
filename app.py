@@ -1833,6 +1833,55 @@ def dashboard():
         ORDER BY count DESC, category ASC
         """
     ).fetchall()
+
+    dashboard_metrics = [
+        {
+            "label": "Total requests",
+            "value": database.execute("SELECT COUNT(*) FROM client_requests").fetchone()[0],
+            "note": "Requests submitted",
+            "tone": "blue",
+            "icon": "◉",
+        },
+        {
+            "label": "Approved",
+            "value": database.execute(
+                "SELECT COUNT(*) FROM appointments WHERE status='Approved'"
+            ).fetchone()[0],
+            "note": "Active appointments",
+            "tone": "green",
+            "icon": "✓",
+        },
+        {
+            "label": "For review",
+            "value": database.execute(
+                "SELECT COUNT(*) FROM client_requests WHERE status='Waiting for schedule'"
+            ).fetchone()[0],
+            "note": "Waiting for a schedule",
+            "tone": "yellow",
+            "icon": "◷",
+        },
+        {
+            "label": "Rejected / cancelled",
+            "value": database.execute(
+                "SELECT COUNT(*) FROM client_requests WHERE status='Rejected'"
+            ).fetchone()[0]
+            + database.execute(
+                "SELECT COUNT(*) FROM appointments WHERE status='Cancelled'"
+            ).fetchone()[0],
+            "note": "Closed records",
+            "tone": "red",
+            "icon": "×",
+        },
+        {
+            "label": "Total served",
+            "value": database.execute(
+                "SELECT COUNT(*) FROM appointments WHERE status='Finished'"
+            ).fetchone()[0],
+            "note": "Completed appointments",
+            "tone": "purple",
+            "icon": "★",
+        },
+    ]
     service_total = sum(item["count"] for item in service_statistics)
     service_chart_colors = ["#1854b7", "#f6c915", "#cf2431", "#6f52bd", "#00a892"]
     service_chart_items = []
@@ -1873,6 +1922,7 @@ def dashboard():
         booked_dates=booked_dates,
         selected_day_appointments=selected_day_appointments,
         recent_requests=recent_requests,
+        dashboard_metrics=dashboard_metrics,
         service_statistics=service_statistics,
         service_total=service_total,
         service_chart_items=service_chart_items,
