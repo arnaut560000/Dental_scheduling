@@ -302,13 +302,13 @@ button, .button-link { border: 0; border-radius: 7px; background: var(--blue); c
 .schedule-time { color: var(--blue-dark); font-size: 13px; white-space: nowrap; }
 .schedule-client { color: var(--navy); font-size: 13px; }
 .sector-pill { display: inline-block; padding: 3px 7px; border-radius: 6px; background: #f1f5fb; color: #506887; font-size: 11px; font-weight: 700; }
-.recent-request-list { display: grid; gap: 4px; }
-.recent-request-list article { display: grid; grid-template-columns: 39px minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 8px 4px; border-radius: 9px; transition: background .15s ease; }
+.recent-request-list { display: grid; gap: 2px; }
+.recent-request-list article { display: grid; grid-template-columns: 36px minmax(0, 1fr) auto; align-items: center; gap: 9px; padding: 5px 4px; border-radius: 9px; transition: background .15s ease; }
 .recent-request-list article:hover { background: #f6f9ff; }
 .recent-request-list strong, .recent-request-list small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .recent-request-list strong { color: var(--navy); font-size: 13px; }
 .recent-request-list small { margin-top: 2px; color: var(--muted); font-size: 11px; }
-.request-avatar { display: grid; width: 39px; height: 39px; place-items: center; border: 2px solid #dbe7fb; border-radius: 12px; background: linear-gradient(135deg, #f8fbff, #e6efff); color: var(--blue-dark); font-size: 11px; font-weight: 900; }
+.request-avatar { display: grid; width: 36px; height: 36px; place-items: center; border: 2px solid #dbe7fb; border-radius: 11px; background: linear-gradient(135deg, #f8fbff, #e6efff); color: var(--blue-dark); font-size: 11px; font-weight: 900; }
 .recent-request-list .badge { font-size: 10px; white-space: nowrap; }
 .service-chart-layout { display: grid; grid-template-columns: 134px minmax(0, 1fr); align-items: center; gap: 18px; }
 .service-donut { position: relative; display: grid; width: 134px; aspect-ratio: 1; place-items: center; border-radius: 50%; background: var(--service-chart); box-shadow: 0 10px 22px rgba(16, 61, 142, .12); }
@@ -323,7 +323,7 @@ button, .button-link { border: 0; border-radius: 7px; background: var(--blue); c
 .sector-statistic-item strong { color: var(--blue-dark); font-size: 13px; }
 .sector-statistic-item small { min-width: 30px; color: var(--muted); font-size: 10px; text-align: right; }
 .announcement-card { background: linear-gradient(145deg, #fff 50%, #fffaf0); }
-.holiday-announcement { padding: 10px 0 10px 13px; border-bottom: 1px solid #e5ebf5; border-left: 3px solid var(--yellow); }
+.holiday-announcement { padding: 7px 0 7px 11px; border-bottom: 1px solid #e5ebf5; border-left: 3px solid var(--yellow); }
 .holiday-announcement:last-of-type { border-bottom: 0; }
 .holiday-announcement strong, .holiday-announcement span { display: block; }
 .holiday-announcement strong { color: var(--navy); font-size: 13px; }

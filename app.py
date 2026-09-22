@@ -1833,7 +1833,7 @@ def dashboard():
         SELECT last_name, first_name, category, status, created_at
         FROM client_requests
         ORDER BY created_at DESC, id DESC
-        LIMIT 5
+        LIMIT 3
         """,
     ).fetchall()
 
@@ -1918,7 +1918,7 @@ def dashboard():
     )
     upcoming_holidays = [
         holiday for holiday in PHILIPPINE_HOLIDAYS if holiday["date"] >= today_date
-    ][:4]
+    ][:3]
 
     return render_template(
         "dashboard.html",
