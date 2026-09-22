@@ -3,20 +3,26 @@
 {% block title %}Dashboard · Talavera E-dental{% endblock %}
 
 {% block content %}
-  <div class="dashboard-welcome">
-    <div>
-      <p class="eyebrow">MUNICIPAL DENTAL SERVICE</p>
+  <header class="dashboard-welcome">
+    <div class="dashboard-welcome-copy">
+      <p class="eyebrow"><span class="eyebrow-mark" aria-hidden="true"></span>MUNICIPAL DENTAL SERVICE</p>
       <h1>Good day, {{ session.display_name or session.username }}!</h1>
-      <p>Manage client requests, schedules, and clinic operations in one place.</p>
+      <p>Here is your clinic workspace for schedules, client requests, and daily follow-up.</p>
     </div>
-    <a class="button-link" href="{{ url_for('appointments', section='pending') }}">Review requests</a>
-  </div>
+    <div class="dashboard-welcome-actions">
+      <div class="dashboard-date-summary">
+        <span>Viewing schedule</span>
+        <strong>{{ selected_date_label }}</strong>
+      </div>
+      <a class="dashboard-primary-action" href="{{ url_for('appointments', section='pending') }}"><span aria-hidden="true">→</span> Review request queue</a>
+    </div>
+  </header>
 
   <div class="dashboard-main-grid">
-    <section class="card dashboard-calendar-card">
+    <section class="card dashboard-calendar-card dashboard-elevated-card">
       <div class="dashboard-card-heading">
         <div>
-          <p class="eyebrow">APPOINTMENT CALENDAR</p>
+          <p class="eyebrow"><span class="card-mark calendar-mark" aria-hidden="true">▦</span>APPOINTMENT CALENDAR</p>
           <h2>{{ displayed_month_label }}</h2>
         </div>
         <div class="calendar-month-actions">
@@ -26,7 +32,7 @@
         </div>
       </div>
       <form class="dashboard-date-picker" method="get">
-        <label>View appointments for<input type="date" name="date" value="{{ selected_date }}" onchange="this.form.submit()"></label>
+        <label><span>Jump to date</span><input type="date" name="date" value="{{ selected_date }}" onchange="this.form.submit()"></label>
       </form>
       <div class="dashboard-calendar-weekdays">
         <span>Sun</span><span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span>
@@ -46,13 +52,16 @@
       <p class="dashboard-calendar-key"><span></span> Green dot: date with appointments</p>
     </section>
 
-    <section class="card dashboard-appointments-card">
+    <section class="card dashboard-appointments-card dashboard-elevated-card">
       <div class="dashboard-card-heading">
         <div>
-          <p class="eyebrow">DAILY SCHEDULE</p>
+          <p class="eyebrow"><span class="card-mark schedule-mark" aria-hidden="true">◷</span>DAILY SCHEDULE</p>
           <h2>Appointments for {{ selected_date_label }}</h2>
         </div>
-        <a class="text-link" href="{{ url_for('appointments', section='approved', date=selected_date) }}">View clients</a>
+        <div class="schedule-card-actions">
+          <span class="schedule-count">{{ selected_day_appointments|length }} scheduled</span>
+          <a class="text-link" href="{{ url_for('appointments', section='approved', date=selected_date) }}">View clients</a>
+        </div>
       </div>
       {% if selected_day_appointments %}
         <div class="dashboard-table-wrap">
@@ -61,9 +70,9 @@
             <tbody>
               {% for appointment in selected_day_appointments %}
                 <tr>
-                  <td><strong>{{ appointment.appointment_time|time12 }}</strong></td>
-                  <td>{{ appointment.last_name }}, {{ appointment.first_name }}</td>
-                  <td>{{ appointment.category }}</td>
+                  <td><strong class="schedule-time">{{ appointment.appointment_time|time12 }}</strong></td>
+                  <td><strong class="schedule-client">{{ appointment.last_name }}, {{ appointment.first_name }}</strong></td>
+                  <td><span class="sector-pill">{{ appointment.category }}</span></td>
                   <td><span class="badge approved">{{ appointment.status }}</span></td>
                 </tr>
               {% endfor %}
@@ -77,10 +86,10 @@
   </div>
 
   <div class="dashboard-bottom-grid">
-    <section class="card">
+    <section class="card dashboard-elevated-card recent-requests-card">
       <div class="dashboard-card-heading">
         <div>
-          <p class="eyebrow">RECENT REQUESTS</p>
+          <p class="eyebrow"><span class="card-mark request-mark" aria-hidden="true">↳</span>RECENT REQUESTS</p>
           <h2>Latest client submissions</h2>
         </div>
         <a class="text-link" href="{{ url_for('appointments', section='pending') }}">View all</a>
@@ -92,7 +101,7 @@
               <div class="request-avatar">{{ client_request.first_name[:1] }}{{ client_request.last_name[:1] }}</div>
               <div>
                 <strong>{{ client_request.last_name }}, {{ client_request.first_name }}</strong>
-                <small>{{ client_request.created_at|manila_datetime }}</small>
+                <small>Submitted {{ client_request.created_at|manila_datetime }}</small>
               </div>
               <span class="badge">{{ client_request.category }}</span>
             </article>
@@ -103,10 +112,10 @@
       {% endif %}
     </section>
 
-    <section class="card">
+    <section class="card dashboard-elevated-card sector-statistics-card">
       <div class="dashboard-card-heading">
         <div>
-          <p class="eyebrow">SERVICE STATISTICS</p>
+          <p class="eyebrow"><span class="card-mark service-mark" aria-hidden="true">◔</span>SERVICE STATISTICS</p>
           <h2>Clients by sector</h2>
         </div>
       </div>
@@ -126,19 +135,19 @@
     </section>
 
     <div class="dashboard-side-stack">
-      <section class="card quick-actions-card">
-        <p class="eyebrow">QUICK ACTIONS</p>
+      <section class="card quick-actions-card dashboard-elevated-card">
+        <p class="eyebrow"><span class="card-mark action-mark" aria-hidden="true">+</span>QUICK ACTIONS</p>
         <h2>Clinic actions</h2>
-        <a class="button-link" href="{{ url_for('appointments', section='pending') }}">Review pending requests</a>
-        <a class="button-link secondary" href="{{ url_for('appointments', section='approved') }}">Open client records</a>
+        <a class="dashboard-action-link primary" href="{{ url_for('appointments', section='pending') }}"><span><strong>Review requests</strong><small>Open the waiting list</small></span><b aria-hidden="true">→</b></a>
+        <a class="dashboard-action-link" href="{{ url_for('appointments', section='approved') }}"><span><strong>Client records</strong><small>See approved appointments</small></span><b aria-hidden="true">→</b></a>
         {% if session.role == 'admin' %}
-          <a class="button-link secondary" href="{{ url_for('clinic_settings_page') }}">Clinic settings</a>
+          <a class="dashboard-action-link" href="{{ url_for('clinic_settings_page') }}"><span><strong>Clinic settings</strong><small>Schedule and closures</small></span><b aria-hidden="true">→</b></a>
         {% endif %}
       </section>
-      <section class="card announcement-card">
+      <section class="card announcement-card dashboard-elevated-card">
         <div class="dashboard-card-heading">
           <div>
-            <p class="eyebrow">ANNOUNCEMENTS</p>
+            <p class="eyebrow"><span class="card-mark announcement-mark" aria-hidden="true">!</span>ANNOUNCEMENTS</p>
             <h2>Upcoming Philippine holidays</h2>
           </div>
         </div>
