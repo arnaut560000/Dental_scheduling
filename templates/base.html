@@ -146,6 +146,72 @@
         })();
       </script>
     {% endif %}
+    {% if has_authenticated_staff and not is_public_client_page %}
+      <script>
+        (function () {
+          const clientManagement = document.getElementById('client-management-content');
+          let dashboardContent = document.getElementById('dashboard-live-content');
+          const main = document.querySelector('main');
+          const liveVersionUrl = "{{ url_for('staff_live_version') }}";
+          let liveVersion = '';
+          let refreshing = false;
+
+          if (clientManagement || !main) return;
+
+          function editingOrModalOpen() {
+            const active = document.activeElement;
+            return document.hidden
+              || document.querySelector('dialog[open]')
+              || (active && ['INPUT', 'SELECT', 'TEXTAREA'].includes(active.tagName));
+          }
+
+          async function refreshVisibleContent() {
+            if (refreshing || editingOrModalOpen()) return;
+            refreshing = true;
+            try {
+              const response = await fetch(window.location.href, {
+                headers: { 'X-Requested-With': 'XMLHttpRequest' },
+              });
+              if (!response.ok) return;
+              const page = new DOMParser().parseFromString(await response.text(), 'text/html');
+              if (dashboardContent) {
+                const updatedDashboard = page.getElementById('dashboard-live-content');
+                if (updatedDashboard) {
+                  dashboardContent.replaceWith(updatedDashboard);
+                  dashboardContent = updatedDashboard;
+                }
+                return;
+              }
+              const updatedMain = page.querySelector('main');
+              if (updatedMain) main.innerHTML = updatedMain.innerHTML;
+            } catch (error) {
+              // Keep the current page usable if a brief network failure occurs.
+            } finally {
+              refreshing = false;
+            }
+          }
+
+          async function pollForStaffChanges() {
+            if (editingOrModalOpen()) return;
+            try {
+              const response = await fetch(liveVersionUrl, {
+                headers: { 'X-Requested-With': 'XMLHttpRequest' },
+              });
+              if (!response.ok) return;
+              const update = await response.json();
+              if (liveVersion && liveVersion !== update.version) await refreshVisibleContent();
+              liveVersion = update.version;
+            } catch (error) {
+              // The next poll will retry automatically.
+            }
+          }
+
+          pollForStaffChanges();
+          window.setInterval(pollForStaffChanges, 5000);
+          window.addEventListener('focus', pollForStaffChanges);
+        })();
+      </script>
+    {% endif %}
     {% block scripts %}{% endblock %}
   </body>
 </html>

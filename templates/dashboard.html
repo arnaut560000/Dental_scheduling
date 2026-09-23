@@ -3,6 +3,7 @@
 {% block title %}Dashboard · Talavera E-dental{% endblock %}
 
 {% block content %}
+  <div id="dashboard-live-content">
   <header class="dashboard-welcome">
     <div class="dashboard-welcome-copy">
       <p class="eyebrow"><span class="eyebrow-mark" aria-hidden="true"></span>MUNICIPAL DENTAL SERVICE</p>
@@ -11,6 +12,7 @@
     </div>
     <div class="dashboard-welcome-actions">
       <div class="dashboard-date-summary">
+        <span class="dashboard-live-indicator"><i aria-hidden="true"></i>Live updates</span>
         <span>Viewing schedule</span>
         <strong>{{ selected_date_label }}</strong>
       </div>
@@ -45,7 +47,7 @@
         </div>
       </div>
       <form class="dashboard-date-picker" method="get">
-        <label><span>Jump to date</span><input type="date" name="date" value="{{ selected_date }}" onchange="this.form.submit()"></label>
+        <label><span>Jump to date</span><input type="date" name="date" value="{{ selected_date }}"></label>
       </form>
       <div class="dashboard-calendar-weekdays">
         <span>Sun</span><span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span>
@@ -173,4 +175,66 @@
       <p class="notice">Block clinic dates in Settings if the clinic will close for a holiday.</p>
     </section>
   </div>
+  </div>
+{% endblock %}
+
+{% block scripts %}
+  <script>
+    (function () {
+      let refreshInProgress = false;
+
+      function dashboardContent() {
+        return document.getElementById('dashboard-live-content');
+      }
+
+      async function refreshDashboard(url, updateHistory) {
+        const content = dashboardContent();
+        if (!content || refreshInProgress) return;
+        refreshInProgress = true;
+        content.classList.add('dashboard-is-refreshing');
+        try {
+          const response = await fetch(url, {
+            headers: { 'X-Requested-With': 'XMLHttpRequest' },
+          });
+          if (!response.ok) return;
+          const page = new DOMParser().parseFromString(await response.text(), 'text/html');
+          const updatedContent = page.getElementById('dashboard-live-content');
+          if (!updatedContent) return;
+          content.innerHTML = updatedContent.innerHTML;
+          if (updateHistory) window.history.pushState({}, '', url);
+        } catch (error) {
+          // Leave the selected calendar view visible until the next attempt succeeds.
+        } finally {
+          const currentContent = dashboardContent();
+          if (currentContent) currentContent.classList.remove('dashboard-is-refreshing');
+          refreshInProgress = false;
+        }
+      }
+
+      document.addEventListener('click', function (event) {
+        const calendarLink = event.target.closest('.dashboard-calendar-card a');
+        if (!calendarLink || !dashboardContent() || event.metaKey || event.ctrlKey) return;
+        event.preventDefault();
+        refreshDashboard(calendarLink.href, true);
+      });
+
+      document.addEventListener('change', function (event) {
+        if (!event.target.matches('.dashboard-date-picker input[type="date"]')) return;
+        const form = event.target.closest('form');
+        const parameters = new URLSearchParams(new FormData(form));
+        refreshDashboard(`${window.location.pathname}?${parameters.toString()}`, true);
+      });
+
+      document.addEventListener('submit', function (event) {
+        if (!event.target.matches('.dashboard-date-picker')) return;
+        event.preventDefault();
+        const parameters = new URLSearchParams(new FormData(event.target));
+        refreshDashboard(`${window.location.pathname}?${parameters.toString()}`, true);
+      });
+
+      window.addEventListener('popstate', function () {
+        if (dashboardContent()) refreshDashboard(window.location.href, false);
+      });
+    })();
+  </script>
 {% endblock %}

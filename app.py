@@ -2587,6 +2587,47 @@ def appointments_live_version():
     return {"version": version}
 
 
+@app.get("/admin/live-version")
+@roles_required("admin", "scheduler")
+def staff_live_version():
+    """Return a small staff-wide change marker for real-time page refreshes."""
+    database = db()
+    request_state = database.execute(
+        """
+        SELECT COUNT(*) AS count, COALESCE(MAX(id), 0) AS last_id,
+               SUM(CASE WHEN status='Waiting for schedule' THEN 1 ELSE 0 END) AS pending,
+               SUM(CASE WHEN status='Rejected' THEN 1 ELSE 0 END) AS rejected
+        FROM client_requests
+        """
+    ).fetchone()
+    appointment_state = database.execute(
+        """
+        SELECT COUNT(*) AS count, COALESCE(MAX(id), 0) AS last_id,
+               COALESCE(MAX(updated_at), MAX(created_at), '') AS last_update,
+               SUM(CASE WHEN status='Approved' THEN 1 ELSE 0 END) AS approved,
+               SUM(CASE WHEN status='Finished' THEN 1 ELSE 0 END) AS finished,
+               SUM(CASE WHEN status='Cancelled' THEN 1 ELSE 0 END) AS cancelled
+        FROM appointments
+        """
+    ).fetchone()
+    settings_state = database.execute(
+        "SELECT COUNT(*) AS count, COALESCE(MAX(updated_at), '') AS last_update FROM clinic_settings"
+    ).fetchone()
+    audit_state = database.execute(
+        "SELECT COALESCE(MAX(id), 0) AS last_id FROM audit_events"
+    ).fetchone()
+    version = ":".join(
+        str(value or "")
+        for value in (
+            request_state["count"], request_state["last_id"], request_state["pending"], request_state["rejected"],
+            appointment_state["count"], appointment_state["last_id"], appointment_state["last_update"],
+            appointment_state["approved"], appointment_state["finished"], appointment_state["cancelled"],
+            settings_state["count"], settings_state["last_update"], audit_state["last_id"],
+        )
+    )
+    return {"version": version}
+
+
 @app.post("/admin/appointments/<int:appointment_id>/texted")
 @roles_required("admin", "scheduler")
 def mark_client_texted(appointment_id):
