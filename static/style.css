@@ -906,3 +906,70 @@ dialog::backdrop { background: rgba(3, 19, 59, .60); backdrop-filter: blur(5px);
   .dashboard-welcome { padding: 18px; }
   .card { border-radius: 16px; }
 }
+
+/* Staff account administration */
+.temporary-access-note {
+  margin: 2px 7px 9px;
+  padding: 10px 11px;
+  border: 1px solid rgba(255, 217, 25, .36);
+  border-radius: 10px;
+  background: rgba(255, 217, 25, .13);
+  color: #fff2a3;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.4;
+}
+.accounts-page-title .notice { margin: 7px 0 0; }
+.accounts-layout {
+  display: grid;
+  grid-template-columns: minmax(300px, .82fr) minmax(0, 1.6fr);
+  align-items: start;
+  gap: 22px;
+}
+.account-create-card,
+.accounts-table-card { padding: 25px; }
+.account-card-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+  margin-bottom: 21px;
+}
+.account-card-heading h2 { margin: 4px 0 0; font-size: 22px; }
+.account-step,
+.account-total,
+.account-current {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 31px;
+  padding: 6px 10px;
+  border: 1px solid rgba(0, 184, 219, .22);
+  border-radius: 99px;
+  background: rgba(229, 248, 255, .82);
+  color: #056d9a;
+  font-size: 12px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+.account-step { min-width: 31px; padding: 5px; border-color: transparent; background: linear-gradient(135deg, var(--future-blue), var(--future-cyan)); color: #fff; }
+.account-form-grid { display: grid; grid-template-columns: 1fr; gap: 15px; }
+.account-form-grid label { margin: 0; }
+.account-create-card .notice { margin: 15px 0 17px; font-size: 12px; }
+.account-create-card > button { width: 100%; margin: 0; }
+.accounts-table-card { min-width: 0; }
+.accounts-table-scroll { overflow-x: auto; }
+.accounts-table { min-width: 680px; }
+.accounts-table td:first-child strong,
+.accounts-table td:first-child small { display: block; }
+.accounts-table td:first-child small { margin-top: 2px; color: var(--muted); font-size: 12px; }
+.account-row-actions { display: flex; flex-wrap: wrap; gap: 7px; min-width: 280px; }
+.account-row-actions form { margin: 0; }
+.account-row-actions .small { min-height: 34px; margin: 0; white-space: nowrap; }
+@media (max-width: 1080px) {
+  .accounts-layout { grid-template-columns: 1fr; }
+}
+@media (max-width: 620px) {
+  .account-create-card, .accounts-table-card { padding: 19px; }
+  .account-row-actions { min-width: 250px; }
+}

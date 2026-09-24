@@ -818,6 +818,87 @@ class SchedulingSystemTests(unittest.TestCase):
         self.assertFalse(scheduling_app.valid_password("ALLUPPERCASE9"))
         self.assertFalse(scheduling_app.valid_password("NoDigitsHere"))
 
+    def test_admin_temporary_password_forces_staff_to_set_a_personal_password(self):
+        self.sign_in_as_admin()
+        original_generator = scheduling_app.generate_temporary_password
+        scheduling_app.generate_temporary_password = lambda: "TemporaryAccess9"
+        try:
+            response = self.client.post(
+                f"/admin/accounts/{self.staff_id}/generate-temporary-password",
+                follow_redirects=True,
+            )
+        finally:
+            scheduling_app.generate_temporary_password = original_generator
+
+        self.assertIn(b"Temporary password for Test Scheduler", response.data)
+        with scheduling_app.app.app_context():
+            temporary_user = scheduling_app.db().execute(
+                """
+                SELECT password_hash, must_change_password, temporary_password_expires_at
+                FROM users WHERE id=?
+                """,
+                (self.staff_id,),
+            ).fetchone()
+        self.assertTrue(temporary_user["must_change_password"])
+        self.assertTrue(temporary_user["temporary_password_expires_at"])
+        self.assertTrue(
+            scheduling_app.check_password_hash(
+                temporary_user["password_hash"], "TemporaryAccess9"
+            )
+        )
+
+        staff_client = scheduling_app.app.test_client()
+        sign_in = staff_client.post(
+            "/admin/login",
+            data={"username": "scheduler", "password": "TemporaryAccess9"},
+            follow_redirects=False,
+        )
+        self.assertIn("/admin/change-password", sign_in.headers["Location"])
+        locked_dashboard = staff_client.get("/admin", follow_redirects=False)
+        self.assertIn("/admin/change-password", locked_dashboard.headers["Location"])
+        password_page = staff_client.get("/admin/change-password")
+        self.assertIn(b"Set your personal password", password_page.data)
+
+        changed = staff_client.post(
+            "/admin/change-password",
+            data={"new_password": "PersonalPassword9", "confirm_password": "PersonalPassword9"},
+            follow_redirects=False,
+        )
+        self.assertIn("/admin/login", changed.headers["Location"])
+        with scheduling_app.app.app_context():
+            updated_user = scheduling_app.db().execute(
+                """
+                SELECT password_hash, must_change_password, temporary_password_expires_at
+                FROM users WHERE id=?
+                """,
+                (self.staff_id,),
+            ).fetchone()
+        self.assertFalse(updated_user["must_change_password"])
+        self.assertIsNone(updated_user["temporary_password_expires_at"])
+        self.assertTrue(
+            scheduling_app.check_password_hash(
+                updated_user["password_hash"], "PersonalPassword9"
+            )
+        )
+
+    def test_admin_can_delete_another_staff_account_but_not_self(self):
+        self.sign_in_as_admin()
+        deleted = self.client.post(
+            f"/admin/accounts/{self.staff_id}/delete", follow_redirects=True
+        )
+        self.assertIn(b"Account deleted permanently", deleted.data)
+        with scheduling_app.app.app_context():
+            self.assertIsNone(
+                scheduling_app.db().execute(
+                    "SELECT id FROM users WHERE id=?", (self.staff_id,)
+                ).fetchone()
+            )
+
+        self_response = self.client.post(
+            f"/admin/accounts/{self.admin_id}/delete", follow_redirects=True
+        )
+        self.assertIn(b"You cannot delete your own account", self_response.data)
+
     def test_analytics_count_requests_without_double_counting_approved_clients(self):
         with scheduling_app.app.app_context():
             database = scheduling_app.db()

@@ -31,17 +31,23 @@
       {% if has_authenticated_staff and not is_public_client_page %}
         <nav>
           <span class="staff-name">Signed in: {{ session.display_name or session.username }}</span>
-          <a href="{{ url_for('dashboard') }}">Dashboard</a>
-          <a href="{{ url_for('appointments') }}">Clients</a>
-          {% if session.role == 'admin' %}
-            <a href="{{ url_for('accounts') }}">Accounts</a>
-            <a href="{{ url_for('clinic_settings_page') }}">Settings</a>
-            <a href="{{ url_for('audit_log') }}">Audit log</a>
+          {% if must_change_password %}
+            <p class="temporary-access-note">Temporary password active. Set your personal password to continue.</p>
+          {% else %}
+            <a href="{{ url_for('dashboard') }}">Dashboard</a>
+            <a href="{{ url_for('appointments') }}">Clients</a>
+            {% if session.role == 'admin' %}
+              <a href="{{ url_for('accounts') }}">Accounts</a>
+              <a href="{{ url_for('clinic_settings_page') }}">Settings</a>
+              <a href="{{ url_for('audit_log') }}">Audit log</a>
+            {% endif %}
           {% endif %}
           <a href="{{ url_for('change_password') }}">Change password</a>
-          <button type="button" id="notify-bell" class="notify-bell" title="New client requests" hidden>
-            🔔<span id="notify-count" class="notify-badge">0</span>
-          </button>
+          {% if not must_change_password %}
+            <button type="button" id="notify-bell" class="notify-bell" title="New client requests" hidden>
+              🔔<span id="notify-count" class="notify-badge">0</span>
+            </button>
+          {% endif %}
           <a href="{{ url_for('logout') }}">Log out</a>
         </nav>
       {% endif %}
@@ -56,7 +62,7 @@
     </main>
     <footer>Free tooth removal scheduling · {{ clinic_schedule_summary }}</footer>
 
-    {% if has_authenticated_staff and not is_public_client_page %}
+    {% if has_authenticated_staff and not is_public_client_page and not must_change_password %}
       <dialog id="notify-modal" aria-labelledby="notify-heading">
         <div class="modal-header">
           <div>
@@ -146,7 +152,7 @@
         })();
       </script>
     {% endif %}
-    {% if has_authenticated_staff and not is_public_client_page %}
+    {% if has_authenticated_staff and not is_public_client_page and not must_change_password %}
       <script>
         (function () {
           const clientManagement = document.getElementById('client-management-content');

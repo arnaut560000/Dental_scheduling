@@ -279,6 +279,8 @@ def create_postgres_schema(database):
             password_hash TEXT NOT NULL,
             role TEXT NOT NULL CHECK(role IN ('admin', 'scheduler')),
             is_active INTEGER NOT NULL DEFAULT 1,
+            must_change_password INTEGER NOT NULL DEFAULT 0,
+            temporary_password_expires_at TIMESTAMPTZ,
             last_seen_appointment_id INTEGER NOT NULL DEFAULT 0,
             created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
         )
@@ -369,6 +371,8 @@ def apply_initial_schema(database):
             password_hash TEXT NOT NULL,
             role TEXT NOT NULL CHECK(role IN ('admin', 'scheduler')),
             is_active INTEGER NOT NULL DEFAULT 1,
+            must_change_password INTEGER NOT NULL DEFAULT 0,
+            temporary_password_expires_at TEXT,
             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
         );
         CREATE TABLE IF NOT EXISTS appointments (
@@ -493,6 +497,12 @@ def apply_initial_schema(database):
             WHERE display_name IS NULL OR TRIM(display_name) = ''
             """
         )
+    if "must_change_password" not in user_columns:
+        database.execute(
+            "ALTER TABLE users ADD COLUMN must_change_password INTEGER NOT NULL DEFAULT 0"
+        )
+    if "temporary_password_expires_at" not in user_columns:
+        database.execute("ALTER TABLE users ADD COLUMN temporary_password_expires_at TEXT")
 
     user_count = database.execute(
         "SELECT COUNT(*) FROM users"
@@ -527,6 +537,7 @@ REGISTRATION_MODE_MIGRATION = "007_appointment_registration_mode"
 REQUEST_SUBMITTED_HISTORY_MIGRATION = "008_appointment_request_submitted_history"
 GENERAL_PUBLIC_CATEGORY_MIGRATION = "009_general_public_category"
 ID_DOCUMENT_MIGRATION = "010_client_id_document"
+TEMPORARY_PASSWORD_MIGRATION = "011_temporary_passwords"
 
 DEFAULT_CLINIC_SETTINGS = {
     "clinic_days": "0,2,4",
@@ -768,6 +779,17 @@ def migrate_client_id_document(database):
         )
 
 
+def migrate_temporary_passwords(database):
+    """Allow administrators to issue short-lived, forced-change passwords."""
+    columns = table_columns(database, "users")
+    if "must_change_password" not in columns:
+        database.execute(
+            "ALTER TABLE users ADD COLUMN must_change_password INTEGER NOT NULL DEFAULT 0"
+        )
+    if "temporary_password_expires_at" not in columns:
+        database.execute("ALTER TABLE users ADD COLUMN temporary_password_expires_at TEXT")
+
+
 def clinic_configuration():
     """Return validated scheduling settings, cached for the current request."""
     if "clinic_configuration" in g:
@@ -849,7 +871,11 @@ def inject_authenticated_staff_state():
     ``g.current_user``, so the header must use this value instead of raw
     session data.
     """
-    return {"has_authenticated_staff": getattr(g, "current_user", None) is not None}
+    current_user = getattr(g, "current_user", None)
+    return {
+        "has_authenticated_staff": current_user is not None,
+        "must_change_password": bool(current_user and current_user["must_change_password"]),
+    }
 
 
 def init_db():
@@ -918,6 +944,10 @@ def init_db():
             migrate_client_id_document(database)
             record_migration(database, ID_DOCUMENT_MIGRATION)
             completed.add(ID_DOCUMENT_MIGRATION)
+        if TEMPORARY_PASSWORD_MIGRATION not in completed:
+            migrate_temporary_passwords(database)
+            record_migration(database, TEMPORARY_PASSWORD_MIGRATION)
+            completed.add(TEMPORARY_PASSWORD_MIGRATION)
     finally:
         if locked:
             database.execute("SELECT pg_advisory_unlock(83742619)")
@@ -930,7 +960,8 @@ def login_required(view):
 
         user = db().execute(
             """
-            SELECT id, username, display_name, role, last_seen_appointment_id
+            SELECT id, username, display_name, role, last_seen_appointment_id,
+                   must_change_password, temporary_password_expires_at
             FROM users
             WHERE id=? AND is_active=1
             """,
@@ -943,6 +974,9 @@ def login_required(view):
             return redirect(url_for("login"))
 
         g.current_user = user
+        if user["must_change_password"] and request.endpoint not in {"change_password", "logout"}:
+            flash("Set your personal password before using the staff system.", "error")
+            return redirect(url_for("change_password"))
         return view(*args, **kwargs)
 
     return wrapped
@@ -968,6 +1002,7 @@ PASSWORD_REQUIREMENT = (
     "Password must be at least 12 characters and include an uppercase letter, "
     "lowercase letter, and number."
 )
+TEMPORARY_PASSWORD_LIFETIME = timedelta(hours=24)
 
 
 def valid_username(value):
@@ -1509,6 +1544,39 @@ def format_client_name(value):
     )
 
 
+def generate_temporary_password():
+    """Create a strong password an administrator can safely share once."""
+    characters = "abcdefghijkmnopqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+    password_characters = [
+        secrets.choice("ABCDEFGHJKLMNPQRSTUVWXYZ"),
+        secrets.choice("abcdefghijkmnopqrstuvwxyz"),
+        secrets.choice("23456789"),
+    ] + [secrets.choice(characters) for _ in range(13)]
+    secrets.SystemRandom().shuffle(password_characters)
+    return "".join(password_characters)
+
+
+def temporary_password_has_expired(value):
+    """Treat an unreadable or missing temporary-password expiry as expired."""
+    if not value:
+        return True
+    try:
+        if isinstance(value, datetime):
+            expires_at = value
+        else:
+            text = str(value).strip()
+            normalized = f"{text[:-1]}+00:00" if text.endswith("Z") else text
+            try:
+                expires_at = datetime.fromisoformat(normalized)
+            except ValueError:
+                expires_at = parsedate_to_datetime(text)
+        if expires_at.tzinfo is None:
+            expires_at = expires_at.replace(tzinfo=CLINIC_TIMEZONE)
+        return expires_at.astimezone(CLINIC_TIMEZONE) <= clinic_now()
+    except (TypeError, ValueError, IndexError):
+        return True
+
+
 @app.template_filter("client_name")
 def client_name(value):
     return format_client_name(value)
@@ -1757,7 +1825,8 @@ def login():
         password = request.form.get("password", "")
         user = db().execute(
             """
-            SELECT id, username, display_name, password_hash, role
+            SELECT id, username, display_name, password_hash, role,
+                   must_change_password, temporary_password_expires_at
             FROM users
             WHERE username=? AND is_active=1
             """,
@@ -1765,13 +1834,18 @@ def login():
         ).fetchone()
 
         if user and check_password_hash(user["password_hash"], password):
+            if user["must_change_password"] and temporary_password_has_expired(
+                user["temporary_password_expires_at"]
+            ):
+                flash("That temporary password has expired. Ask an administrator for a new one.", "error")
+                return render_template("login.html")
             session.clear()
             session.permanent = True
             session["user_id"] = user["id"]
             session["username"] = user["username"]
             session["display_name"] = user["display_name"] or user["username"]
             session["role"] = user["role"]
-            return redirect(url_for("dashboard"))
+            return redirect(url_for("change_password") if user["must_change_password"] else url_for("dashboard"))
         flash("Invalid username or password.", "error")
     return render_template("login.html")
 
@@ -2157,22 +2231,17 @@ def toggle_account(user_id):
     return redirect(url_for("accounts"))
 
 
-@app.post("/admin/accounts/<int:user_id>/reset-password")
+@app.post("/admin/accounts/<int:user_id>/generate-temporary-password")
 @roles_required("admin")
-def reset_staff_password(user_id):
-    new_password = request.form.get("new_password", "")
-
+def generate_staff_temporary_password(user_id):
+    """Issue a short-lived password that can only be used to set a personal one."""
     if user_id == session["user_id"]:
         flash("Use Change password to update your own password.", "error")
         return redirect(url_for("accounts"))
 
-    if not valid_password(new_password):
-        flash(PASSWORD_REQUIREMENT, "error")
-        return redirect(url_for("accounts"))
-
     target = db().execute(
         """
-        SELECT id, username, display_name
+        SELECT id, username, display_name, is_active
         FROM users
         WHERE id=?
         """,
@@ -2182,19 +2251,70 @@ def reset_staff_password(user_id):
     if not target:
         flash("Account not found.", "error")
         return redirect(url_for("accounts"))
+    if not target["is_active"]:
+        flash("Enable this account before generating a temporary password.", "error")
+        return redirect(url_for("accounts"))
 
+    temporary_password = generate_temporary_password()
+    expires_at = clinic_now() + TEMPORARY_PASSWORD_LIFETIME
     db().execute(
-        "UPDATE users SET password_hash=? WHERE id=?",
-        (generate_password_hash(new_password), user_id),
+        """
+        UPDATE users
+        SET password_hash=?, must_change_password=1, temporary_password_expires_at=?
+        WHERE id=?
+        """,
+        (generate_password_hash(temporary_password), expires_at.isoformat(), user_id),
     )
     audit(
-        "password_reset_by_admin",
+        "temporary_password_generated",
         target_user_id=user_id,
-        details=f"username={target['username']}",
+        details=(
+            f"username={target['username']}; "
+            f"expires_at={expires_at.isoformat()}"
+        ),
     )
     db().commit()
 
-    flash(f"Password reset for {target['display_name'] or target['username']}.", "success")
+    target_name = target["display_name"] or target["username"]
+    flash(
+        f"Temporary password for {target_name}: {temporary_password}. "
+        f"It expires {format_manila_datetime(expires_at)}. Share it privately; it is shown only now.",
+        "success",
+    )
+    return redirect(url_for("accounts"))
+
+
+@app.post("/admin/accounts/<int:user_id>/delete")
+@roles_required("admin")
+def delete_account(user_id):
+    """Permanently remove an unused staff account while preserving audit evidence."""
+    if user_id == session["user_id"]:
+        flash("You cannot delete your own account.", "error")
+        return redirect(url_for("accounts"))
+
+    target = db().execute(
+        "SELECT id, username, role, is_active FROM users WHERE id=?",
+        (user_id,),
+    ).fetchone()
+    if not target:
+        flash("Account not found.", "error")
+        return redirect(url_for("accounts"))
+
+    active_admins = db().execute(
+        "SELECT COUNT(*) FROM users WHERE role='admin' AND is_active=1"
+    ).fetchone()[0]
+    if target["role"] == "admin" and target["is_active"] and active_admins <= 1:
+        flash("You cannot delete the last active administrator.", "error")
+        return redirect(url_for("accounts"))
+
+    audit(
+        "account_deleted",
+        target_user_id=user_id,
+        details=f"username={target['username']}; role={target['role']}",
+    )
+    db().execute("DELETE FROM users WHERE id=?", (user_id,))
+    db().commit()
+    flash("Account deleted permanently.", "success")
     return redirect(url_for("accounts"))
 
 
@@ -2868,11 +2988,22 @@ def change_password():
         confirm_password = request.form.get("confirm_password", "")
 
         user = db().execute(
-            "SELECT password_hash FROM users WHERE id=?",
+            """
+            SELECT password_hash, must_change_password, temporary_password_expires_at
+            FROM users
+            WHERE id=?
+            """,
             (g.current_user["id"],),
         ).fetchone()
+        is_temporary_password_flow = bool(user["must_change_password"])
 
-        if not check_password_hash(user["password_hash"], current_password):
+        if is_temporary_password_flow and temporary_password_has_expired(
+            user["temporary_password_expires_at"]
+        ):
+            session.clear()
+            flash("Your temporary password has expired. Ask an administrator for a new one.", "error")
+            return redirect(url_for("login"))
+        if not is_temporary_password_flow and not check_password_hash(user["password_hash"], current_password):
             flash("Your current password is incorrect.", "error")
         elif not valid_password(new_password):
             flash(PASSWORD_REQUIREMENT, "error")
@@ -2880,16 +3011,23 @@ def change_password():
             flash("The new passwords do not match.", "error")
         else:
             db().execute(
-                "UPDATE users SET password_hash=? WHERE id=?",
+                """
+                UPDATE users
+                SET password_hash=?, must_change_password=0, temporary_password_expires_at=NULL
+                WHERE id=?
+                """,
                 (generate_password_hash(new_password), g.current_user["id"]),
             )
-            audit("password_changed")
+            audit("temporary_password_replaced" if is_temporary_password_flow else "password_changed")
             db().commit()
             session.clear()
-            flash("Password changed. Please sign in again.", "success")
+            flash("Password saved. Please sign in with your new password.", "success")
             return redirect(url_for("login"))
 
-    return render_template("change_password.html")
+    return render_template(
+        "change_password.html",
+        temporary_password=bool(g.current_user["must_change_password"]),
+    )
 
 
 @app.get("/admin/export")

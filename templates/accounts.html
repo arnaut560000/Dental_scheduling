@@ -3,74 +3,65 @@
 {% block title %}Staff Accounts · SmileCare{% endblock %}
 
 {% block content %}
-  <div class="page-title">
+  <div class="page-title accounts-page-title">
     <div>
       <p class="eyebrow">ADMIN ONLY</p>
       <h1>Staff accounts</h1>
+      <p class="notice">Create, secure, disable, or remove staff access from one place.</p>
     </div>
   </div>
 
-  <section class="dashboard-grid">
-    <form class="card" method="post">
+  <section class="accounts-layout">
+    <form class="card account-create-card" method="post" autocomplete="off">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      <h2>Add an account</h2>
-      <label>Username<input name="username" minlength="3" required></label>
-      <label>
-        Display name
-        <input name="display_name" minlength="2" maxlength="80" required>
-      </label>
-      <label>Password<input type="password" name="password" minlength="12" required></label>
-      <p class="notice">Use 12+ characters with uppercase, lowercase, and a number.</p>
-      <label>
-        Role
-        <select name="role">
-          <option value="scheduler">Scheduler</option>
-          <option value="admin">Administrator</option>
-        </select>
-      </label>
+      <div class="account-card-heading">
+        <div>
+          <p class="eyebrow">NEW STAFF ACCESS</p>
+          <h2>Create account</h2>
+        </div>
+        <span class="account-step">1</span>
+      </div>
+
+      <div class="account-form-grid">
+        <label>Username<input name="username" minlength="3" maxlength="40" required autocomplete="off"></label>
+        <label>Display name<input name="display_name" minlength="2" maxlength="80" required autocomplete="off"></label>
+        <label>Starting password<input type="password" name="password" minlength="12" required autocomplete="new-password"></label>
+        <label>Role<select name="role"><option value="scheduler">Scheduler</option><option value="admin">Administrator</option></select></label>
+      </div>
+      <p class="notice">Use 12+ characters with uppercase, lowercase, and a number. The staff member can later change their own password.</p>
       <button type="submit">Create account</button>
     </form>
 
-    <section class="card table-card">
-      <h2>Existing accounts</h2>
-      <table>
-        <thead>
-          <tr><th>Display name</th><th>Username</th><th>Role</th><th>Status</th><th>Action</th></tr>
-        </thead>
-        <tbody>
-          {% for user in users %}
-            <tr>
-              <td>{{ user.display_name or user.username }}</td>
-              <td>{{ user.username }}</td>
-              <td>{{ user.role|title }}</td>
-              <td>{{ 'Active' if user.is_active else 'Disabled' }}</td>
-              <td>
-                {% if user.id != session.user_id %}
-                  <form method="post" action="{{ url_for('toggle_account', user_id=user.id) }}">
-                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                    <button class="small" type="submit">{{ 'Disable' if user.is_active else 'Enable' }}</button>
-                  </form>
-                  <form method="post" action="{{ url_for('reset_staff_password', user_id=user.id) }}">
-                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                    <input
-                      type="password"
-                      name="new_password"
-                      minlength="12"
-                      placeholder="New password"
-                      required
-                      autocomplete="new-password"
-                    >
-                    <button class="small" type="submit">Reset password</button>
-                    <p class="notice">12+ characters, uppercase, lowercase, and number.</p>
-                  </form>
-                {% else %}
-                  Current account
-                {% endif %}
-              </td>
-            </tr>
-          {% endfor %}
-        </tbody>
-      </table>
+    <section class="card table-card accounts-table-card">
+      <div class="account-card-heading">
+        <div><p class="eyebrow">ACCESS DIRECTORY</p><h2>Existing accounts</h2></div>
+        <span class="account-total">{{ users|length }} total</span>
+      </div>
+      <div class="accounts-table-scroll">
+        <table class="accounts-table">
+          <thead><tr><th>Staff member</th><th>Role</th><th>Status</th><th>Access controls</th></tr></thead>
+          <tbody>
+            {% for user in users %}
+              <tr>
+                <td><strong>{{ user.display_name or user.username }}</strong><small>@{{ user.username }}</small></td>
+                <td><span class="badge">{{ user.role|title }}</span></td>
+                <td><span class="badge {{ 'approved' if user.is_active else 'cancelled' }}">{{ 'Active' if user.is_active else 'Disabled' }}</span></td>
+                <td>
+                  {% if user.id != session.user_id %}
+                    <div class="account-row-actions">
+                      <form method="post" action="{{ url_for('toggle_account', user_id=user.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="small secondary-button" type="submit">{{ 'Disable' if user.is_active else 'Enable' }}</button></form>
+                      <form method="post" action="{{ url_for('generate_staff_temporary_password', user_id=user.id) }}" onsubmit="return confirm('Generate a 24-hour temporary password for this account? The old password will stop working.');"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="small" type="submit" {% if not user.is_active %}disabled{% endif %}>Generate temporary password</button></form>
+                      <form method="post" action="{{ url_for('delete_account', user_id=user.id) }}" onsubmit="return confirm('Delete this account permanently? This cannot be undone.');"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="small danger-button" type="submit">Delete account</button></form>
+                    </div>
+                  {% else %}
+                    <span class="account-current">Current account</span>
+                  {% endif %}
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
     </section>
   </section>
 {% endblock %}
