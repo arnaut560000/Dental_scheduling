@@ -1052,7 +1052,8 @@ class SchedulingSystemTests(unittest.TestCase):
         self.sign_in_as_admin()
         page = self.client.get("/admin/audit-log")
         self.assertEqual(page.status_code, 200)
-        self.assertIn(b"Client Scheduled", page.data)
+        self.assertIn(b"Client approved and scheduled", page.data)
+        self.assertIn(b"Appointment set for 2030-01-07.", page.data)
         self.assertIn(b"Test Administrator", page.data)
 
     def test_admin_can_update_schedule_and_block_a_date(self):

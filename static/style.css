@@ -994,3 +994,53 @@ dialog::backdrop { background: rgba(3, 19, 59, .60); backdrop-filter: blur(5px);
   margin: 0;
   white-space: nowrap;
 }
+
+/* Readable administrator activity history */
+.audit-log-card { padding: 18px; }
+.audit-log-list { display: grid; gap: 10px; }
+.audit-log-item {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr);
+  gap: 13px;
+  padding: 15px;
+  border: 1px solid rgba(32, 90, 198, .14);
+  border-radius: 14px;
+  background: linear-gradient(120deg, rgba(247, 250, 255, .96), rgba(255, 255, 255, .95));
+}
+.audit-log-marker {
+  width: 11px;
+  height: 11px;
+  margin-top: 7px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--future-blue), var(--future-cyan));
+  box-shadow: 0 0 0 5px rgba(31, 91, 207, .10);
+}
+.audit-log-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+.audit-log-heading h2 { margin: 0; font-size: 16px; color: var(--future-navy); }
+.audit-log-meta, .audit-log-details { margin: 4px 0 0; color: var(--muted); }
+.audit-log-meta { font-size: 12px; }
+.audit-log-details { font-size: 14px; }
+.audit-log-target {
+  flex: 0 1 auto;
+  max-width: 38%;
+  padding: 5px 9px;
+  overflow: hidden;
+  border-radius: 99px;
+  background: rgba(37, 96, 207, .09);
+  color: var(--future-navy);
+  font-size: 12px;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+@media (max-width: 620px) {
+  .audit-log-card { padding: 12px; }
+  .audit-log-item { padding: 13px; }
+  .audit-log-heading { display: block; }
+  .audit-log-target { display: inline-block; max-width: 100%; margin-top: 8px; }
+}

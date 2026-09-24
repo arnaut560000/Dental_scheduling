@@ -1622,6 +1622,102 @@ def format_manila_datetime(value):
         return str(value)
 
 
+def audit_detail_values(details):
+    """Read the compact key=value details stored with audit events."""
+    values = {}
+    for part in str(details or "").split(";"):
+        key, separator, value = part.partition("=")
+        if separator and key.strip():
+            values[key.strip()] = value.strip()
+    return values
+
+
+def audit_event_presentation(event):
+    """Turn a technical audit row into a concise, staff-friendly activity item."""
+    values = audit_detail_values(event.get("details"))
+    action = event.get("action", "")
+    appointment_name = " ".join(
+        part for part in (
+            format_client_name(event.get("appointment_first_name")),
+            format_client_name(event.get("appointment_last_name")),
+        ) if part
+    )
+    target_name = event.get("target_name") or event.get("target_username") or appointment_name
+    actor_name = event.get("actor_name") or event.get("actor_username") or "System"
+    date_value = values.get("date")
+    time_value = values.get("time")
+    schedule = " ".join(
+        value for value in (
+            date_value,
+            format_time(time_value) if time_value else "",
+        ) if value
+    )
+    labels = {
+        "account_created": "Staff account created",
+        "account_status_changed": "Staff account status changed",
+        "account_deleted": "Staff account deleted",
+        "temporary_password_generated": "Temporary password generated",
+        "temporary_password_replaced": "Temporary password replaced",
+        "password_changed": "Password changed",
+        "super_admin_password_changed": "Super Admin password changed",
+        "client_scheduled": "Client approved and scheduled",
+        "client_added_manually": "Approved client added",
+        "client_request_rejected": "Client request rejected",
+        "client_texted": "Client marked as texted",
+        "appointment_notes": "Staff notes updated",
+        "appointment_finished": "Client marked as served",
+        "appointment_cancelled": "Appointment cancelled",
+        "appointment_no_show": "Client marked as no-show",
+        "clinic_schedule_updated": "Clinic schedule updated",
+        "clinic_date_blocked": "Clinic date blocked",
+        "clinic_date_unblocked": "Clinic date unblocked",
+        "daily_schedule_exported": "Daily schedule exported",
+        "client_id_document_viewed": "Client ID document viewed",
+    }
+    descriptions = {
+        "account_created": f"Created a {values.get('role', 'staff')} account.",
+        "account_status_changed": f"Account {values.get('status', 'status')}.",
+        "account_deleted": f"Deleted a {values.get('role', 'staff')} account.",
+        "temporary_password_generated": (
+            f"Temporary password expires {format_manila_datetime(values['expires_at'])}."
+            if values.get("expires_at") else "A 24-hour temporary password was generated."
+        ),
+        "temporary_password_replaced": "Temporary password was replaced with a personal password.",
+        "password_changed": "Password was changed.",
+        "super_admin_password_changed": "Super Admin password was changed.",
+        "client_scheduled": (
+            f"Appointment set for {schedule}." if schedule else "Appointment schedule assigned."
+        ),
+        "client_added_manually": (
+            f"Registration: {values.get('registration_mode', 'Manual').title()}."
+            + (f" Appointment set for {schedule}." if schedule else "")
+        ),
+        "client_request_rejected": values.get("reason", "No reason was recorded."),
+        "client_texted": "Text message contact was recorded.",
+        "appointment_notes": "Internal staff notes were saved.",
+        "appointment_finished": "Client was marked as served.",
+        "appointment_cancelled": values.get("reason", "No cancellation reason was recorded."),
+        "appointment_no_show": values.get("reason", "No no-show reason was recorded."),
+        "clinic_schedule_updated": "Clinic days, hours, slots, or daily limit were changed.",
+        "clinic_date_blocked": (
+            f"{values.get('date', 'A date')} was blocked. {values.get('reason', '')}".strip()
+        ),
+        "clinic_date_unblocked": f"{values.get('date', 'A date')} was reopened for scheduling.",
+        "daily_schedule_exported": (
+            f"Exported {values.get('rows', '0')} client record(s) for {values.get('date', 'the selected date')}."
+        ),
+        "client_id_document_viewed": "A client ID document was opened for verification.",
+    }
+    return {
+        **event,
+        "friendly_action": labels.get(action, action.replace("_", " ").title()),
+        "friendly_details": descriptions.get(action, event.get("details") or "No additional details recorded."),
+        "friendly_when": format_manila_datetime(event.get("created_at")),
+        "friendly_actor": actor_name,
+        "friendly_target": target_name or "Clinic record",
+    }
+
+
 @app.template_filter("time12")
 def time12(value):
     return format_time(value) if value else ""
@@ -2120,17 +2216,21 @@ def clinic_settings_page():
 @app.get("/admin/audit-log")
 @roles_required("admin")
 def audit_log():
-    events = db().execute(
+    rows = db().execute(
         """
         SELECT audit_events.*, actor.display_name AS actor_name, actor.username AS actor_username,
-               target.display_name AS target_name, target.username AS target_username
+               target.display_name AS target_name, target.username AS target_username,
+               appointment.first_name AS appointment_first_name,
+               appointment.last_name AS appointment_last_name
         FROM audit_events
         LEFT JOIN users AS actor ON actor.id = audit_events.user_id
         LEFT JOIN users AS target ON target.id = audit_events.target_user_id
+        LEFT JOIN appointments AS appointment ON appointment.id = audit_events.appointment_id
         ORDER BY audit_events.id DESC
         LIMIT 250
         """
     ).fetchall()
+    events = [audit_event_presentation(dict(row)) for row in rows]
     return render_template("audit_log.html", events=events)
 
 
@@ -2240,6 +2340,7 @@ def toggle_account(user_id):
             flash("You cannot disable the last active administrator.", "error")
             return redirect(url_for("accounts"))
 
+        new_account_status = "disabled" if target["is_active"] else "enabled"
         db().execute(
             """
             UPDATE users
@@ -2251,7 +2352,7 @@ def toggle_account(user_id):
         audit(
             "account_status_changed",
             target_user_id=user_id,
-            details=f"username={target['username']}",
+            details=f"username={target['username']}; status={new_account_status}",
         )
         db().commit()
         flash("Account status updated.", "success")
@@ -2944,7 +3045,10 @@ def manage_appointment(appointment_id):
         audit(
             f"appointment_{action}",
             appointment_id=appointment_id,
-            details=f"status={new_status}; date={new_date}; time={new_time}",
+            details=(
+                f"status={new_status}; date={new_date}; time={new_time}; "
+                f"reason={reason or 'No reason recorded'}"
+            ),
         )
         database.commit()
         flash("Appointment updated successfully.", "success")

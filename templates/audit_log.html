@@ -1,34 +1,37 @@
 {% extends 'base.html' %}
 
-{% block title %}Audit log · SmileCare{% endblock %}
+{% block title %}Activity log · eDental{% endblock %}
 
 {% block content %}
   <div class="page-title">
     <div>
       <p class="eyebrow">ADMINISTRATOR ONLY</p>
-      <h1>Audit log</h1>
-      <p class="notice">The 250 most recent staff, account, configuration, and export events are shown.</p>
+      <h1>Activity log</h1>
+      <p class="notice">A clear record of the 250 latest staff, client, account, clinic, and export activities.</p>
     </div>
   </div>
 
-  <section class="card table-card">
+  <section class="card audit-log-card">
     {% if events %}
-      <table class="wide">
-        <thead><tr><th>When</th><th>Action</th><th>Performed by</th><th>Target</th><th>Details</th></tr></thead>
-        <tbody>
-          {% for event in events %}
-            <tr>
-              <td>{{ event.created_at }}</td>
-              <td>{{ event.action|replace('_', ' ')|title }}</td>
-              <td>{{ event.actor_name or event.actor_username or 'System' }}</td>
-              <td>{{ event.target_name or event.target_username or '—' }}</td>
-              <td>{{ event.details or '—' }}</td>
-            </tr>
-          {% endfor %}
-        </tbody>
-      </table>
+      <div class="audit-log-list">
+        {% for event in events %}
+          <article class="audit-log-item">
+            <span class="audit-log-marker" aria-hidden="true"></span>
+            <div class="audit-log-main">
+              <div class="audit-log-heading">
+                <div>
+                  <h2>{{ event.friendly_action }}</h2>
+                  <p class="audit-log-meta">{{ event.friendly_when }} · by {{ event.friendly_actor }}</p>
+                </div>
+                <span class="audit-log-target">{{ event.friendly_target }}</span>
+              </div>
+              <p class="audit-log-details">{{ event.friendly_details }}</p>
+            </div>
+          </article>
+        {% endfor %}
+      </div>
     {% else %}
-      <p class="empty">No audit events have been recorded yet.</p>
+      <p class="empty">No activity has been recorded yet.</p>
     {% endif %}
   </section>
 {% endblock %}
