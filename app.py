@@ -67,6 +67,23 @@ app.config.update(
 ADMIN_USERNAME = os.environ.get("ADMIN_USERNAME")
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD")
 
+# The username setting is the safest way to identify the Super Admin in Render.
+# The display-name fallback keeps Ma'am Nikkie's existing account protected.
+SUPER_ADMIN_USERNAME = os.environ.get("SUPER_ADMIN_USERNAME", "").strip().casefold()
+SUPER_ADMIN_DISPLAY_NAME = os.environ.get(
+    "SUPER_ADMIN_DISPLAY_NAME", "Ma'am Nikkie"
+).strip().casefold()
+
+
+def is_super_admin(user):
+    username_matches = bool(SUPER_ADMIN_USERNAME) and (
+        user["username"].casefold() == SUPER_ADMIN_USERNAME
+    )
+    display_name = (user["display_name"] or "").strip().casefold()
+    return username_matches or (
+        bool(SUPER_ADMIN_DISPLAY_NAME) and display_name == SUPER_ADMIN_DISPLAY_NAME
+    )
+
 csrf = CSRFProtect(app)
 limiter = Limiter(
     key_func=get_remote_address,
@@ -2178,7 +2195,14 @@ def accounts():
         ORDER BY role, display_name, username
         """
     ).fetchall()
-    return render_template("accounts.html", users=users)
+    super_admin_id = next(
+        (user["id"] for user in users if is_super_admin(user)), None
+    )
+    return render_template(
+        "accounts.html",
+        users=users,
+        super_admin_id=super_admin_id,
+    )
 
 
 @app.post("/admin/accounts/<int:user_id>/toggle")
@@ -2189,7 +2213,7 @@ def toggle_account(user_id):
     else:
         target = db().execute(
             """
-            SELECT id, username, role, is_active
+            SELECT id, username, display_name, role, is_active
             FROM users
             WHERE id=?
             """,
@@ -2198,6 +2222,10 @@ def toggle_account(user_id):
 
         if not target:
             flash("Account not found.", "error")
+            return redirect(url_for("accounts"))
+
+        if is_super_admin(target) and not is_super_admin(g.current_user):
+            flash("The Super Admin account cannot be disabled.", "error")
             return redirect(url_for("accounts"))
 
         active_admins = db().execute(
@@ -2284,6 +2312,48 @@ def generate_staff_temporary_password(user_id):
     return redirect(url_for("accounts"))
 
 
+@app.post("/admin/accounts/<int:user_id>/set-super-admin-password")
+@roles_required("admin")
+def set_super_admin_password(user_id):
+    """Allow the clinic administrator to recover the protected account only."""
+    new_password = request.form.get("new_password", "")
+    target = db().execute(
+        """
+        SELECT id, username, display_name
+        FROM users
+        WHERE id=?
+        """,
+        (user_id,),
+    ).fetchone()
+
+    if not target:
+        flash("Account not found.", "error")
+        return redirect(url_for("accounts"))
+    if not is_super_admin(target):
+        flash("This password action is available only for the Super Admin account.", "error")
+        return redirect(url_for("accounts"))
+    if not valid_password(new_password):
+        flash(PASSWORD_REQUIREMENT, "error")
+        return redirect(url_for("accounts"))
+
+    db().execute(
+        """
+        UPDATE users
+        SET password_hash=?, must_change_password=0, temporary_password_expires_at=NULL
+        WHERE id=?
+        """,
+        (generate_password_hash(new_password), user_id),
+    )
+    audit(
+        "super_admin_password_changed",
+        target_user_id=user_id,
+        details=f"username={target['username']}",
+    )
+    db().commit()
+    flash("Super Admin password updated.", "success")
+    return redirect(url_for("accounts"))
+
+
 @app.post("/admin/accounts/<int:user_id>/delete")
 @roles_required("admin")
 def delete_account(user_id):
@@ -2293,11 +2363,15 @@ def delete_account(user_id):
         return redirect(url_for("accounts"))
 
     target = db().execute(
-        "SELECT id, username, role, is_active FROM users WHERE id=?",
+        "SELECT id, username, display_name, role, is_active FROM users WHERE id=?",
         (user_id,),
     ).fetchone()
     if not target:
         flash("Account not found.", "error")
+        return redirect(url_for("accounts"))
+
+    if is_super_admin(target) and not is_super_admin(g.current_user):
+        flash("The Super Admin account cannot be deleted.", "error")
         return redirect(url_for("accounts"))
 
     active_admins = db().execute(

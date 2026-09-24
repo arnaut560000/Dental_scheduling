@@ -973,3 +973,24 @@ dialog::backdrop { background: rgba(3, 19, 59, .60); backdrop-filter: blur(5px);
   .account-create-card, .accounts-table-card { padding: 19px; }
   .account-row-actions { min-width: 250px; }
 }
+
+.password-generator-field {
+  display: grid;
+  gap: 7px;
+}
+
+.password-generator-control {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+}
+
+.password-generator-control input {
+  min-width: 0;
+  flex: 1;
+}
+
+.password-generator-control button {
+  margin: 0;
+  white-space: nowrap;
+}

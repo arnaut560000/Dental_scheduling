@@ -25,7 +25,13 @@
       <div class="account-form-grid">
         <label>Username<input name="username" minlength="3" maxlength="40" required autocomplete="off"></label>
         <label>Display name<input name="display_name" minlength="2" maxlength="80" required autocomplete="off"></label>
-        <label>Starting password<input type="password" name="password" minlength="12" required autocomplete="new-password"></label>
+        <div class="password-generator-field">
+          <label for="new-account-password">Starting password</label>
+          <div class="password-generator-control">
+            <input id="new-account-password" type="password" name="password" minlength="12" required autocomplete="new-password">
+            <button id="generate-account-password" class="small secondary-button" type="button">Generate</button>
+          </div>
+        </div>
         <label>Role<select name="role"><option value="scheduler">Scheduler</option><option value="admin">Administrator</option></select></label>
       </div>
       <p class="notice">Use 12+ characters with uppercase, lowercase, and a number. The staff member can later change their own password.</p>
@@ -43,15 +49,28 @@
           <tbody>
             {% for user in users %}
               <tr>
+                {% set is_super_admin_account = user.id == super_admin_id %}
                 <td><strong>{{ user.display_name or user.username }}</strong><small>@{{ user.username }}</small></td>
-                <td><span class="badge">{{ user.role|title }}</span></td>
+                <td><span class="badge {{ 'approved' if is_super_admin_account else '' }}">{{ 'Super Admin' if is_super_admin_account else user.role|title }}</span></td>
                 <td><span class="badge {{ 'approved' if user.is_active else 'cancelled' }}">{{ 'Active' if user.is_active else 'Disabled' }}</span></td>
                 <td>
                   {% if user.id != session.user_id %}
                     <div class="account-row-actions">
-                      <form method="post" action="{{ url_for('toggle_account', user_id=user.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="small secondary-button" type="submit">{{ 'Disable' if user.is_active else 'Enable' }}</button></form>
-                      <form method="post" action="{{ url_for('generate_staff_temporary_password', user_id=user.id) }}" onsubmit="return confirm('Generate a 24-hour temporary password for this account? The old password will stop working.');"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="small" type="submit" {% if not user.is_active %}disabled{% endif %}>Generate temporary password</button></form>
-                      <form method="post" action="{{ url_for('delete_account', user_id=user.id) }}" onsubmit="return confirm('Delete this account permanently? This cannot be undone.');"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="small danger-button" type="submit">Delete account</button></form>
+                      {% if is_super_admin_account %}
+                        <form method="post" action="{{ url_for('set_super_admin_password', user_id=user.id) }}">
+                          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                          <input type="password" name="new_password" minlength="12" required autocomplete="new-password" placeholder="New Super Admin password">
+                          <button class="small" type="submit">Change password</button>
+                        </form>
+                        <form method="post" action="{{ url_for('generate_staff_temporary_password', user_id=user.id) }}" onsubmit="return confirm('Generate a 24-hour temporary password for the Super Admin? The current password will stop working.');">
+                          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                          <button class="small secondary-button" type="submit">Generate temporary password</button>
+                        </form>
+                      {% else %}
+                        <form method="post" action="{{ url_for('toggle_account', user_id=user.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="small secondary-button" type="submit">{{ 'Disable' if user.is_active else 'Enable' }}</button></form>
+                        <form method="post" action="{{ url_for('generate_staff_temporary_password', user_id=user.id) }}" onsubmit="return confirm('Generate a 24-hour temporary password for this account? The old password will stop working.');"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="small" type="submit" {% if not user.is_active %}disabled{% endif %}>Generate temporary password</button></form>
+                        <form method="post" action="{{ url_for('delete_account', user_id=user.id) }}" onsubmit="return confirm('Delete this account permanently? This cannot be undone.');"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="small danger-button" type="submit">Delete account</button></form>
+                      {% endif %}
                     </div>
                   {% else %}
                     <span class="account-current">Current account</span>
@@ -64,4 +83,55 @@
       </div>
     </section>
   </section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  (function () {
+    const passwordInput = document.getElementById("new-account-password");
+    const generateButton = document.getElementById("generate-account-password");
+
+    if (!passwordInput || !generateButton) return;
+
+    function randomIndex(length) {
+      const allowedMaximum = 256 - (256 % length);
+      const randomByte = new Uint8Array(1);
+
+      do {
+        crypto.getRandomValues(randomByte);
+      } while (randomByte[0] >= allowedMaximum);
+
+      return randomByte[0] % length;
+    }
+
+    function randomCharacter(characters) {
+      return characters[randomIndex(characters.length)];
+    }
+
+    generateButton.addEventListener("click", function () {
+      const upper = "ABCDEFGHJKLMNPQRSTUVWXYZ";
+      const lower = "abcdefghijkmnopqrstuvwxyz";
+      const numbers = "23456789";
+      const all = upper + lower + numbers;
+      const characters = [
+        randomCharacter(upper),
+        randomCharacter(lower),
+        randomCharacter(numbers),
+      ];
+
+      while (characters.length < 16) {
+        characters.push(randomCharacter(all));
+      }
+
+      for (let index = characters.length - 1; index > 0; index -= 1) {
+        const swapIndex = randomIndex(index + 1);
+        [characters[index], characters[swapIndex]] = [characters[swapIndex], characters[index]];
+      }
+
+      passwordInput.value = characters.join("");
+      passwordInput.focus();
+      passwordInput.select();
+    });
+  })();
+</script>
 {% endblock %}

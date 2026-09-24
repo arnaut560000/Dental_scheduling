@@ -899,6 +899,49 @@ class SchedulingSystemTests(unittest.TestCase):
         )
         self.assertIn(b"You cannot delete your own account", self_response.data)
 
+    def test_super_admin_cannot_be_disabled_or_deleted_but_password_can_be_recovered(self):
+        with scheduling_app.app.app_context():
+            database = scheduling_app.db()
+            super_admin_id = database.execute(
+                """
+                INSERT INTO users (username, display_name, password_hash, role)
+                VALUES (?, ?, ?, 'admin')
+                """,
+                (
+                    "nikkie",
+                    "Ma'am Nikkie",
+                    generate_password_hash("OriginalPassword9"),
+                ),
+            ).lastrowid
+            database.commit()
+
+        self.sign_in_as_admin()
+        accounts_page = self.client.get("/admin/accounts")
+        self.assertIn(b"Super Admin", accounts_page.data)
+
+        disabled = self.client.post(
+            f"/admin/accounts/{super_admin_id}/toggle", follow_redirects=True
+        )
+        self.assertIn(b"Super Admin account cannot be disabled", disabled.data)
+        deleted = self.client.post(
+            f"/admin/accounts/{super_admin_id}/delete", follow_redirects=True
+        )
+        self.assertIn(b"Super Admin account cannot be deleted", deleted.data)
+
+        recovered = self.client.post(
+            f"/admin/accounts/{super_admin_id}/set-super-admin-password",
+            data={"new_password": "RecoveredPassword9"},
+            follow_redirects=True,
+        )
+        self.assertIn(b"Super Admin password updated", recovered.data)
+        with scheduling_app.app.app_context():
+            user = scheduling_app.db().execute(
+                "SELECT password_hash FROM users WHERE id=?", (super_admin_id,)
+            ).fetchone()
+        self.assertTrue(
+            scheduling_app.check_password_hash(user["password_hash"], "RecoveredPassword9")
+        )
+
     def test_analytics_count_requests_without_double_counting_approved_clients(self):
         with scheduling_app.app.app_context():
             database = scheduling_app.db()
