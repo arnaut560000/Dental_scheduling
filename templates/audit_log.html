@@ -16,16 +16,32 @@
       <div class="audit-log-list">
         {% for event in events %}
           <article class="audit-log-item">
-            <span class="audit-log-marker" aria-hidden="true"></span>
-            <div class="audit-log-main">
-              <div class="audit-log-heading">
-                <div>
-                  <h2>{{ event.friendly_action }}</h2>
-                  <p class="audit-log-meta">{{ event.friendly_when }} · by {{ event.friendly_actor }}</p>
-                </div>
-                <span class="audit-log-target">{{ event.friendly_target }}</span>
+            <header class="audit-log-heading">
+              <div class="audit-action-icon" aria-hidden="true">✓</div>
+              <div>
+                <p class="audit-field-label">ACTIVITY</p>
+                <h2>{{ event.friendly_action }}</h2>
               </div>
-              <p class="audit-log-details">{{ event.friendly_details }}</p>
+            </header>
+
+            <dl class="audit-log-facts">
+              <div>
+                <dt>DATE AND TIME</dt>
+                <dd>{{ event.friendly_when }}</dd>
+              </div>
+              <div>
+                <dt>PERFORMED BY</dt>
+                <dd>{{ event.friendly_actor }}</dd>
+              </div>
+              <div>
+                <dt>AFFECTED RECORD</dt>
+                <dd>{{ event.friendly_target }}</dd>
+              </div>
+            </dl>
+
+            <div class="audit-log-details">
+              <p class="audit-field-label">DETAILS</p>
+              <p>{{ event.friendly_details }}</p>
             </div>
           </article>
         {% endfor %}
