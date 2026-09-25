@@ -809,6 +809,27 @@ button:active, .button-link:active { transform: translateY(0); }
   transform: translateX(3px);
 }
 .staff-layout nav a:hover::before { background: #59d8ff; box-shadow: 0 0 12px #59d8ff; }
+.staff-layout .site-header nav a.is-active {
+  border-color: rgba(145, 221, 255, .64);
+  background: linear-gradient(100deg, #1765d4, #1697dd 68%, #15b9ca);
+  color: #fff;
+  box-shadow: 0 8px 18px rgba(0, 12, 49, .26), inset 0 1px 0 rgba(255, 255, 255, .2);
+  transform: translateX(4px);
+}
+.staff-layout .site-header nav a.is-active::before {
+  background: #ffe24c;
+  box-shadow: 0 0 0 3px rgba(255, 226, 76, .16), 0 0 12px rgba(255, 226, 76, .85);
+}
+.staff-layout .site-header nav a.is-active::after {
+  position: absolute;
+  top: 9px;
+  right: 9px;
+  bottom: 9px;
+  width: 3px;
+  border-radius: 99px;
+  background: rgba(255, 255, 255, .82);
+  content: "";
+}
 .staff-layout .staff-name {
   border-color: rgba(151, 207, 255, .23);
   border-radius: 11px;

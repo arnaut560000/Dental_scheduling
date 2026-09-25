@@ -34,15 +34,15 @@
           {% if must_change_password %}
             <p class="temporary-access-note">Temporary password active. Set your personal password to continue.</p>
           {% else %}
-            <a href="{{ url_for('dashboard') }}">Dashboard</a>
-            <a href="{{ url_for('appointments') }}">Clients</a>
+            <a class="{% if request.endpoint == 'dashboard' %}is-active{% endif %}" href="{{ url_for('dashboard') }}" {% if request.endpoint == 'dashboard' %}aria-current="page"{% endif %}>Dashboard</a>
+            <a class="{% if request.endpoint == 'appointments' %}is-active{% endif %}" href="{{ url_for('appointments') }}" {% if request.endpoint == 'appointments' %}aria-current="page"{% endif %}>Clients</a>
             {% if session.role == 'admin' %}
-              <a href="{{ url_for('accounts') }}">Accounts</a>
-              <a href="{{ url_for('clinic_settings_page') }}">Settings</a>
-              <a href="{{ url_for('audit_log') }}">Audit log</a>
+              <a class="{% if request.endpoint == 'accounts' %}is-active{% endif %}" href="{{ url_for('accounts') }}" {% if request.endpoint == 'accounts' %}aria-current="page"{% endif %}>Accounts</a>
+              <a class="{% if request.endpoint == 'clinic_settings_page' %}is-active{% endif %}" href="{{ url_for('clinic_settings_page') }}" {% if request.endpoint == 'clinic_settings_page' %}aria-current="page"{% endif %}>Settings</a>
+              <a class="{% if request.endpoint == 'audit_log' %}is-active{% endif %}" href="{{ url_for('audit_log') }}" {% if request.endpoint == 'audit_log' %}aria-current="page"{% endif %}>Audit log</a>
             {% endif %}
           {% endif %}
-          <a href="{{ url_for('change_password') }}">Change password</a>
+          <a class="{% if request.endpoint == 'change_password' %}is-active{% endif %}" href="{{ url_for('change_password') }}" {% if request.endpoint == 'change_password' %}aria-current="page"{% endif %}>Change password</a>
           {% if not must_change_password %}
             <button type="button" id="notify-bell" class="notify-bell" title="New client requests" hidden>
               🔔<span id="notify-count" class="notify-badge">0</span>
