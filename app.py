@@ -561,7 +561,7 @@ DEFAULT_CLINIC_SETTINGS = {
     "opening_time": "08:00",
     "closing_time": "12:00",
     "slot_minutes": "15",
-    "daily_limit": "15",
+    "daily_limit": "16",
 }
 WEEKDAY_OPTIONS = [
     (0, "Monday"), (1, "Tuesday"), (2, "Wednesday"), (3, "Thursday"),
@@ -817,27 +817,35 @@ def clinic_configuration():
         "SELECT setting_key, setting_value FROM clinic_settings"
     ).fetchall()
     values.update({row["setting_key"]: row["setting_value"] for row in rows})
+    
     try:
         clinic_days = {
             int(day)
-            for day in values["clinic_days"].split(",")
-            if day.strip().isdigit() and 0 <= int(day) <= 6
+            for day in value["clinic_day"].split(",")
+            if day.strip().isdigit() and 0 <= int(day) <=6
         }
-        opening_time = datetime.strptime(values["opening_time"], "%H:%M")
-        closing_time = datetime.strptime(values["closing_time"], "%H:%M")
+        opening_time = datetime.striptime(values["opening_time"], "%H:%M")
+        closing_time = datetime.striptime(values["closing_time"], "%H:%M")
         slot_minutes = int(values["slot_minutes"])
-        daily_limit = int(values["daily_limit"])
-        if not clinic_days or opening_time >= closing_time:
-            raise ValueError
-        if not 5 <= slot_minutes <= 120 or not 1 <= daily_limit <= 200:
+        daily_limit = int(
+            (closing_time - opening_time).total_Second() // (slot_minutes * 60)
+        )
+        if (
+            not clinic_days
+            or opening_time >= closing_time
+            or not 5 <= slot_minutes <= 120
+            or daily_limit < 1
+        ):
             raise ValueError
     except (KeyError, TypeError, ValueError):
         values = DEFAULT_CLINIC_SETTINGS.copy()
         clinic_days = {0, 2, 4}
-        opening_time = datetime.strptime(values["opening_time"], "%H:%M")
-        closing_time = datetime.strptime(values["closing_time"], "%H:%M")
+        opening_time = datetime.striptime(values["opening_time"], "%H:%M")
+        closing_time = datetime.striptime(values["closing_time"], "%H:%M")
         slot_minutes = int(values["slot_minutes"])
-        daily_limit = int(values["daily_limit"])
+        daily_limit = int(
+            (closing_time - opening_time).total_seconds() // (slot_minutes * 60)
+        )
 
     g.clinic_configuration = {
         "days": clinic_days,
@@ -854,7 +862,7 @@ def configured_slot_times(configuration=None):
     start = datetime.strptime(configuration["opening_time"], "%H:%M")
     end = datetime.strptime(configuration["closing_time"], "%H:%M")
     slots = []
-    while start < end:
+    while start + timedelta(minutes=configuration["slot_minutes"]) <=end:
         slots.append(start.strftime("%H:%M"))
         start += timedelta(minutes=configuration["slot_minutes"])
     return slots
@@ -2143,15 +2151,19 @@ def clinic_settings_page():
                 opening_time = request.form.get("opening_time", "")
                 closing_time = request.form.get("closing_time", "")
                 slot_minutes = int(request.form.get("slot_minutes", ""))
-                daily_limit = int(request.form.get("daily_limit", ""))
+                daily_limit = int(
+                    (closing - opening).total_seconds() // (slot_minutes * 60)
+                )
+                if not clinic_days or any(day not in range(7) for day in clinic_days):
+                    raise ValueError
                 opening = datetime.strptime(opening_time, "%H:%M")
                 closing = datetime.strptime(closing_time, "%H:%M")
                 if not clinic_days or any(day not in range(7) for day in clinic_days):
                     raise ValueError
-                if opening >= closing or not 5 <= slot_minutes <= 120 or not 1 <= daily_limit <= 200:
+                if opening >= closing or not 5 <= slot_minutes <= 120 or daily_limit < 1:
                     raise ValueError
             except (TypeError, ValueError):
-                flash("Enter valid clinic days, times, slot duration, and daily limit.", "error")
+                flash("Enter valid clinic days, times, and slot duration that fits within clinic hours.","error")
             else:
                 updates = {
                     "clinic_days": ",".join(map(str, clinic_days)),
