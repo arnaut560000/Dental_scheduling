@@ -33,8 +33,17 @@
       <div class="form-grid settings-form-grid">
         <label>Opening time*<input type="time" name="opening_time" required value="{{ configuration.opening_time }}"></label>
         <label>Closing time*<input type="time" name="closing_time" required value="{{ configuration.closing_time }}"></label>
-        <label>Slot duration (minutes)*<input type="number" name="slot_minutes" min="5" max="120" required value="{{ configuration.slot_minutes }}"></label>
-        <label>Daily client limit*<input type="number" name="daily_limit" min="1" max="200" required value="{{ configuration.daily_limit }}"></label>
+        <label>
+          Slot duration (minutes)*
+          <input id="slot=minutes" type="number" name="slot_minutes" min="5" max="120" required value="{{ configuration.slot_minutes }}">
+        </label>
+        <label>
+          Daily client limit
+          <output id="automatic-daily-milit" class="automatic-limit">
+            {{ configuration.daily_limit }} clients per clinic day
+          </output>
+          <small class="notice">Calculated automatically from clinic hours and slot duration.</small>
+        </label>
       </div>
       <button type="submit">Save clinic schedule</button>
     </form>
