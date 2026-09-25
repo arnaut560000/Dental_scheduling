@@ -35,11 +35,11 @@
         <label>Closing time*<input type="time" name="closing_time" required value="{{ configuration.closing_time }}"></label>
         <label>
           Slot duration (minutes)*
-          <input id="slot=minutes" type="number" name="slot_minutes" min="5" max="120" required value="{{ configuration.slot_minutes }}">
+          <input id="slot-minutes" type="number" name="slot_minutes" min="5" max="120" required value="{{ configuration.slot_minutes }}">
         </label>
         <label>
           Daily client limit
-          <output id="automatic-daily-milit" class="automatic-limit">
+          <output id="automatic-daily-limit" class="automatic-limit">
             {{ configuration.daily_limit }} clients per clinic day
           </output>
           <small class="notice">Calculated automatically from clinic hours and slot duration.</small>
@@ -84,36 +84,35 @@
       {% endif %}
     </section>
   </div>
+{% endblock %}
 
 {% block scripts %}
   <script>
-    cons openingTime = document.querySelector('[name="opening_time"]');
-    cons closingTime = document.querySelector('[name"closing_time"]');
-    cons slotMinutes = document.querySelector('#slot-minutes');
-    cons dailyLimit = document.querySelector('#automatic-daily-limit');
-
+    const openingTime = document.querySelector('[name="opening_time"]');
+    const closingTime = document.querySelector('[name="closing_time"]');
+    const slotMinutes = document.querySelector('#slot-minutes');
+    const dailyLimit = document.querySelector('#automatic-daily-limit');
 
     function refreshAutomaticDailyLimit() {
-      if (!openingTime.value || !closingTime.value || slotMinutes.value)  {
+      if (!openingTime.value || !closingTime.value || !slotMinutes.value) {
         dailyLimit.textContent = 'Enter clinic hours and slot duration';
         return;
       }
 
-      cons [openHour, openMinute] = openingTime.value.split(':').map(Number);
-      cons [closingHour, closeMinute] = consTime.value.split(':').map(Number);
-      cons availableMinutes = (closeHour * 60 + closeMinute) - (openHour * 60 + openMinute);
-      cons capacity = Math.flooe(availableMinutes / Number(slotMinutes.value));
+      const [openHour, openMinute] = openingTime.value.split(':').map(Number);
+      const [closeHour, closeMinute] = closingTime.value.split(':').map(Number);
+      const availableMinutes = (closeHour * 60 + closeMinute) - (openHour * 60 + openMinute);
+      const capacity = Math.floor(availableMinutes / Number(slotMinutes.value));
 
       dailyLimit.textContent = capacity > 0
-      ? `${capacity} clients per clinic day`
-      : 'Slot duration does not fit clinic hours';
+        ? `${capacity} clients per clinic day`
+        : 'Slot duration does not fit clinic hours';
     }
 
-    [openingTime, closingTime, slotMinutes].forEach((field) =>{
-      field.addEventListener('input', refreshAutomationDailyLimit);
-      field.addEventListener('change'. refreshAutomaticDailyLimit);
-    });      
+    [openingTime, closingTime, slotMinutes].forEach((field) => {
+      field.addEventListener('input', refreshAutomaticDailyLimit);
+      field.addEventListener('change', refreshAutomaticDailyLimit);
+    });
+    refreshAutomaticDailyLimit();
   </script>
-{% endblock %}
-
 {% endblock %}

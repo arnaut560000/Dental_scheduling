@@ -790,7 +790,7 @@ class SchedulingSystemTests(unittest.TestCase):
                 ).fetchall()
             }
         self.assertEqual(settings["opening_time"], "08:00")
-        self.assertEqual(settings["daily_limit"], "15")
+        self.assertEqual(settings["daily_limit"], "16")
 
         original_initializer = scheduling_app.init_db
         scheduling_app.init_db = lambda: self.fail("A request should not run migrations.")
@@ -973,7 +973,7 @@ class SchedulingSystemTests(unittest.TestCase):
             configuration = scheduling_app.clinic_configuration()
             slots = scheduling_app.configured_slot_times(configuration)
         self.assertEqual(configuration["days"], {0, 2, 4})
-        self.assertEqual(configuration["daily_limit"], 15)
+        self.assertEqual(configuration["daily_limit"], 16)
         self.assertEqual(slots[0], "08:00")
         self.assertEqual(slots[-1], "11:45")
 
@@ -997,7 +997,7 @@ class SchedulingSystemTests(unittest.TestCase):
 
         response = self.client.get(f"/slots?date={next_tuesday.isoformat()}")
         payload = response.get_json()
-        self.assertEqual(payload["max"], 3)
+        self.assertEqual(payload["max"], 2)
         self.assertEqual([slot["time"] for slot in payload["slots"]], ["09:00", "09:30"])
 
     def test_dashboard_shows_the_selected_day_and_active_appointments_only(self):

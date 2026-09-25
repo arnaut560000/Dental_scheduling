@@ -995,6 +995,18 @@ dialog::backdrop { background: rgba(3, 19, 59, .60); backdrop-filter: blur(5px);
   white-space: nowrap;
 }
 
+.automatic-limit {
+  display: block;
+  min-height: 44px;
+  margin-top: 6px;
+  padding: 11px 12px;
+  border: 1px solid rgba(32, 90, 198, .18);
+  border-radius: 9px;
+  background: rgba(229, 239, 255, .72);
+  color: var(--future-navy);
+  font-weight: 800;
+}
+
 /* Clear, separated administrator activity history */
 .audit-log-card { padding: 20px; }
 .audit-log-list { display: grid; gap: 14px; }
