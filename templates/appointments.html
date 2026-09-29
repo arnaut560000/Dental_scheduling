@@ -273,6 +273,58 @@
     </form>
   </dialog>
 
+  <dialog id="add-request-modal" aria-labelledby="add-request-heading">
+    <div class="modal-header">
+      <div>
+        <p class="eyebrow">STAFF REGISTRATION</p>
+        <h2 id="add-request-heading">Add client</h2>
+        <p class="notice">Add a client to the waiting-for-schedule list. Assign the appointment date and time later.</p>
+      </div>
+      <button class="close-modal" id="add-request-close" type="button" aria-label="Close">×</button>
+    </div>
+    <form id="add-request-form" method="post" action="{{ url_for('add_manual_client_request') }}" class="appointment-form">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="form-grid">
+        <label>Last name<input name="last_name" maxlength="80" inputmode="text" required oninput="this.value = this.value.replace(/[0-9]/g, '')"></label>
+        <label>First name<input name="first_name" maxlength="80" inputmode="text" required oninput="this.value = this.value.replace(/[0-9]/g, '')"></label>
+        <label>Middle initial<input name="middle_initial" maxlength="10" inputmode="text" oninput="this.value = this.value.replace(/[0-9]/g, '')"></label>
+        <label>Birth date<input name="birth_date" type="date" max="{{ today }}" required></label>
+        <label>Gender
+          <select name="gender" required>
+            <option value="">Choose gender</option>
+            <option value="Female">Female</option>
+            <option value="Male">Male</option>
+            <option value="Others">Others</option>
+          </select>
+        </label>
+        <label>Client sector
+          <select name="category" required>
+            <option value="">Choose sector</option>
+            {% for item in categories %}<option value="{{ item }}">{{ item }}</option>{% endfor %}
+          </select>
+        </label>
+        <label>Barangay
+          <select name="barangay" required>
+            <option value="">Choose barangay</option>
+            {% for item in barangays %}<option value="{{ item }}">{{ item }}</option>{% endfor %}
+          </select>
+        </label>
+        <label>11-digit contact number<input name="contact_number" inputmode="numeric" pattern="[0-9]{11}" maxlength="11" required></label>
+        <label>Email address <span class="notice">(optional)</span><input name="email" type="email" maxlength="254"></label>
+        <label>Mode of registration
+          <select name="registration_mode" required>
+            <option value="">Choose mode</option>
+            <option value="Email">Email</option>
+            <option value="Form">Form</option>
+            <option value="Text">Text</option>
+          </select>
+        </label>
+      </div>
+      <p class="notice">The client will appear under Pending → Waiting for schedule.</p>
+      <button type="submit">Add client</button>
+    </form>
+  </dialog>
+
   <dialog id="add-client-modal" aria-labelledby="add-client-heading">
     <div class="modal-header">
       <div>
@@ -364,6 +416,8 @@
       const rejectForm = document.getElementById('reject-form');
       const addClientModal = document.getElementById('add-client-modal');
       const addClientForm = document.getElementById('add-client-form');
+      const addRequestModal = document.getElementById('add-request-modal');
+      const addRequestForm = document.getElementById('add-request-form');
       const addClientDate = document.getElementById('add-client-date');
       const addClientTime = document.getElementById('add-client-time');
       const addClientHelp = document.getElementById('add-client-help');
@@ -625,6 +679,17 @@
       }
       document.getElementById('reject-close').addEventListener('click', function () { rejectModal.close(); });
 
+      function bindAddRequestButton() {
+        document.querySelectorAll('.add-request-button:not([data-live-bound])').forEach(function (button) {
+          button.dataset.liveBound = 'true';
+          button.addEventListener('click', function () {
+            addRequestForm.reset();
+            addRequestModal.showModal();
+          });
+        });
+      }
+      document.getElementById('add-request-close').addEventListener('click', function () { addRequestModal.close(); });
+
       function bindAddClientButton() {
         document.querySelectorAll('.add-client-button:not([data-live-bound])').forEach(function (button) {
           button.dataset.liveBound = 'true';
@@ -686,6 +751,7 @@
       function bindClientManagementButtons() {
         bindScheduleButtons();
         bindRejectButtons();
+        bindAddRequestButton();
         bindAddClientButton();
         bindHistoryButtons();
       }
@@ -697,9 +763,15 @@
           submitWithoutReload(form);
           return;
         }
-        if (form === scheduleForm || form === rejectForm || form === addClientForm) {
+        if (form === scheduleForm || form === rejectForm || form === addClientForm || form === addRequestForm) {
           event.preventDefault();
-          const modal = form === scheduleForm ? scheduleModal : form === rejectForm ? rejectModal : addClientModal;
+          const modal = form === scheduleForm
+            ? scheduleModal
+            : form === rejectForm
+              ? rejectModal
+              : form === addRequestForm
+                ? addRequestModal
+                : addClientModal;
           submitWithoutReload(form, modal);
           return;
         }

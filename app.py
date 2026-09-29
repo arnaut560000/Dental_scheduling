@@ -558,6 +558,7 @@ GENERAL_PUBLIC_CATEGORY_MIGRATION = "009_general_public_category"
 ID_DOCUMENT_MIGRATION = "010_client_id_document"
 TEMPORARY_PASSWORD_MIGRATION = "011_temporary_passwords"
 SERVICE_DESK_ROLE_MIGRATION = "012_service_desk_role"
+CLIENT_REQUEST_REGISTRATION_MODE_MIGRATION = "013_client_request_registration_mode"
 
 DEFAULT_CLINIC_SETTINGS = {
     "clinic_days": "0,2,4",
@@ -761,14 +762,15 @@ def migrate_appointment_registration_mode(database):
         WHERE registration_mode IS NULL OR TRIM(registration_mode)=''
         """
     )
+
+
 def migrate_client_request_registration_mode(database):
     """Store the source when staff add a client to the pending queue."""
     columns = table_columns(database, "client_requests")
-    if "registratio_mode" not in columns:
+    if "registration_mode" not in columns:
         database.execute(
-            "ALTER TABLE client_requests ADD COLUMN registration_mode TEXT NOT NULL DEFAULT 'Onlune'"
+            "ALTER TABLE client_requests ADD COLUMN registration_mode TEXT NOT NULL DEFAULT 'Online'"
         )
-                                             
 
 def migrate_appointment_request_submitted_history(database):
     """Keep the original online request time alongside later staff actions."""
@@ -1022,6 +1024,10 @@ def init_db():
             migrate_appointment_registration_mode(database)
             record_migration(database, REGISTRATION_MODE_MIGRATION)
             completed.add(REGISTRATION_MODE_MIGRATION)
+        if CLIENT_REQUEST_REGISTRATION_MODE_MIGRATION not in completed:
+            migrate_client_request_registration_mode(database)
+            record_migration(database, CLIENT_REQUEST_REGISTRATION_MODE_MIGRATION)
+            completed.add(CLIENT_REQUEST_REGISTRATION_MODE_MIGRATION)
         if REQUEST_SUBMITTED_HISTORY_MIGRATION not in completed:
             migrate_appointment_request_submitted_history(database)
             record_migration(database, REQUEST_SUBMITTED_HISTORY_MIGRATION)
@@ -1743,6 +1749,7 @@ def audit_event_presentation(event):
         "super_admin_password_changed": "Super Admin password changed",
         "client_scheduled": "Client approved and scheduled",
         "client_added_manually": "Approved client added",
+        "client_request_added_manually": "Client added to waiting list",
         "walk_in_client_served": "Walk-in client recorded as served",
         "client_request_rejected": "Client request rejected",
         "client_texted": "Client marked as texted",
@@ -1773,6 +1780,10 @@ def audit_event_presentation(event):
         "client_added_manually": (
             f"Registration: {values.get('registration_mode', 'Manual').title()}."
             + (f" Appointment set for {schedule}." if schedule else "")
+        ),
+        "client_request_added_manually": (
+            "Added to the waiting-for-schedule list. "
+            f"Registration: {values.get('registration_mode', 'Manual').title()}."
         ),
         "walk_in_client_served": (
              f"Walk-in service recorded at {schedule}."
@@ -2772,7 +2783,7 @@ def schedule_request(request_id):
                     fresh_request["email"],
                     appointment_date,
                     appointment_time,
-                    fresh_request["registratio_mode"],
+                    fresh_request["registration_mode"],
                 ),
             )
 
@@ -2797,7 +2808,7 @@ def schedule_request(request_id):
                 new_date=appointment_date,
                 new_time=appointment_time,
                 notes=(
-                    ""Appointment created from the client request queue. "
+                    "Appointment created from the client request queue. "
                     f"Mode of registration: {fresh_request['registration_mode']}."
                 ),
                 request_submitted_at=str(fresh_request["created_at"]),
@@ -2992,9 +3003,11 @@ def add_manual_client_request():
     elif fields["registration_mode"] not in {"Email", "Form", "Text"}:
         flash("Choose how the client registered.", "error")
     else:
+        database = db()
         try:
+            begin_write_transaction(database)
             request_id = insert_and_get_id(
-                db(),
+                database,
                 """
                 INSERT INTO client_requests (
                     request_code, last_name, first_name, middle_initial, birth_date,
@@ -3024,11 +3037,11 @@ def add_manual_client_request():
                     f"registration_mode={fields['registration_mode']}"
                 ),
             )
-            db().commit()
+            database.commit()
             flash("Client added to the waiting-for-schedule list.", "success")
             return redirect(url_for("appointments", section="pending"))
         except (sqlite3.IntegrityError, PostgresIntegrityError):
-            db().rollback()
+            database.rollback()
             flash("The client request could not be saved. Please try again.", "error")
 
     return redirect(url_for("appointments", section="pending"))
