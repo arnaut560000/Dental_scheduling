@@ -1732,6 +1732,7 @@ def audit_event_presentation(event):
         "super_admin_password_changed": "Super Admin password changed",
         "client_scheduled": "Client approved and scheduled",
         "client_added_manually": "Approved client added",
+        "walk_in_client_served": "Walk-in client recorded as served",
         "client_request_rejected": "Client request rejected",
         "client_texted": "Client marked as texted",
         "appointment_notes": "Staff notes updated",
@@ -1762,6 +1763,10 @@ def audit_event_presentation(event):
             f"Registration: {values.get('registration_mode', 'Manual').title()}."
             + (f" Appointment set for {schedule}." if schedule else "")
         ),
+        "walk_in_client_served": (
+             f"Walk-in service recorded at {schedule}."
+             if schedule else "Walk-in service was recorded."
+         ),
         "client_request_rejected": values.get("reason", "No reason was recorded."),
         "client_texted": "Text message contact was recorded.",
         "appointment_notes": "Internal staff notes were saved.",
