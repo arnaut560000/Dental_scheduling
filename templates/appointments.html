@@ -105,7 +105,7 @@
       <div class="client-filter-actions">
         <button type="submit">Search records</button>
         {% if client_section == 'approved' %}
-          <button class="secondary-button add-client-button" type="button">Add approved client</button>
+          <button class="secondary-button add-client-button" type="button">Add client</button>
           {% if selected_date and session.role == 'admin' %}
             <a class="button-link secondary" href="{{ url_for('export_day', date=selected_date) }}">Export this day</a>
           {% endif %}
