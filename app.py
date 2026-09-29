@@ -325,6 +325,7 @@ def create_postgres_schema(database):
             birth_date TEXT NOT NULL, gender TEXT NOT NULL, barangay TEXT NOT NULL, category TEXT NOT NULL,
             contact_number TEXT NOT NULL, contact_key TEXT NOT NULL, email TEXT,
             privacy_consent INTEGER NOT NULL DEFAULT 0,
+            registration_mode TEXT NOT NULL DEFAULT 'Online',
             consent_at TIMESTAMPTZ,
             privacy_notice_version TEXT,
             id_document_name TEXT,
@@ -418,6 +419,7 @@ def apply_initial_schema(database):
             contact_number TEXT NOT NULL,
             contact_key TEXT NOT NULL,
             email TEXT,
+            registration_mode TEXT NOT NULL DEFAULT 'Online',
             privacy_consent INTEGER NOT NULL DEFAULT 0,
             consent_at TEXT,
             privacy_notice_version TEXT,
@@ -759,7 +761,14 @@ def migrate_appointment_registration_mode(database):
         WHERE registration_mode IS NULL OR TRIM(registration_mode)=''
         """
     )
-
+def migrate_client_request_registration_mode(database):
+    """Store the source when staff add a client to the pending queue."""
+    columns = table_columns(database, "client_requests")
+    if "registratio_mode" not in columns:
+        database.execute(
+            "ALTER TABLE client_requests ADD COLUMN registration_mode TEXT NOT NULL DEFAULT 'Onlune'"
+        )
+                                             
 
 def migrate_appointment_request_submitted_history(database):
     """Keep the original online request time alongside later staff actions."""
