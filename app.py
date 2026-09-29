@@ -53,8 +53,8 @@ app.config.update(
     # IDs are collected only for PWD and Senior Citizen requests. Keep the
     # complete request small enough for a public form while allowing a clear
     # photo or PDF of an eligibility ID.
-    MAX_CONTENT_LENGTH=(5 * 1024 * 1024) + (64 * 1024),
-    MAX_ID_DOCUMENT_BYTES=5 * 1024 * 1024,
+    MAX_CONTENT_LENGTH=(10 * 1024 * 1024) + (64 * 1024),
+    MAX_ID_DOCUMENT_BYTES=10 * 1024 * 1024,
     CLINIC_NAME=os.environ.get("CLINIC_NAME", "SmileCare"),
     PRIVACY_CONTACT=os.environ.get("PRIVACY_CONTACT", "the clinic administrator"),
     PUBLIC_URL=os.environ.get("PUBLIC_URL", "").rstrip("/"),
@@ -1480,7 +1480,7 @@ def handle_csrf_error(_error):
 
 @app.errorhandler(RequestEntityTooLarge)
 def handle_request_too_large(_error):
-    flash("The uploaded ID must be 5 MB or smaller. Please choose a smaller file.", "error")
+    flash("The uploaded ID must be 10 MB or smaller. Please choose a smaller file.", "error")
     return redirect(url_for("request_appointment"))
 
 
@@ -1841,7 +1841,7 @@ def validate_id_document(upload):
     if not contents:
         return None, "The uploaded ID file is empty. Please choose the file again."
     if len(contents) > app.config["MAX_ID_DOCUMENT_BYTES"]:
-        return None, "The uploaded ID must be 5 MB or smaller."
+        return None, "The uploaded ID must be 10 MB or smaller."
 
     return {
         "id_document_name": filename,
