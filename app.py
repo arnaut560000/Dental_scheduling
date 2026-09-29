@@ -107,7 +107,7 @@ ALLOWED_ID_DOCUMENTS = {
     ".pdf": "application/pdf",
 }
 VALID_GENDERS = {"Female", "Male", "Others"}
-VALID_REGISTRATION_MODES = {"Email", "Form", "Online", "Text"}
+VALID_REGISTRATION_MODES = {"Email", "Form", "Online", "Text", "Walk-in"}
 PHILIPPINE_HOLIDAYS = [
     {"date": date(2026, 11, 1), "name": "All Saints' Day", "type": "Special non-working day"},
     {"date": date(2026, 11, 2), "name": "All Souls' Day", "type": "Additional special non-working day"},
@@ -294,7 +294,7 @@ def create_postgres_schema(database):
             username TEXT NOT NULL UNIQUE,
             display_name TEXT,
             password_hash TEXT NOT NULL,
-            role TEXT NOT NULL CHECK(role IN ('admin', 'scheduler')),
+            role TEXT NOT NULL CHECK(role IN ('admin', 'scheduler', 'service_desk')),
             is_active INTEGER NOT NULL DEFAULT 1,
             must_change_password INTEGER NOT NULL DEFAULT 0,
             temporary_password_expires_at TIMESTAMPTZ,
@@ -386,7 +386,7 @@ def apply_initial_schema(database):
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             username TEXT NOT NULL UNIQUE,
             password_hash TEXT NOT NULL,
-            role TEXT NOT NULL CHECK(role IN ('admin', 'scheduler')),
+            role TEXT NOT NULL CHECK(role IN ('admin', 'scheduler', 'service desk')),
             is_active INTEGER NOT NULL DEFAULT 1,
             must_change_password INTEGER NOT NULL DEFAULT 0,
             temporary_password_expires_at TEXT,
@@ -813,7 +813,60 @@ def migrate_temporary_passwords(database):
         )
     if "temporary_password_expires_at" not in columns:
         database.execute("ALTER TABLE users ADD COLUMN temporary_password_expires_at TEXT")
+def mifrate_service_desk_role(database):
+    """Allow the restricted Service Desk stall role."""
+    if using_postgre(database):
+        constraints = database.execute(
+            """
+            Select conname, pg_get_constraindef(oid) AS definition
+            FROM pg_constraint
+            WHERE conrelid = 'user'::regclass AND contype = 'c'
+            """
+        ).fetchall()
+        for constrain in constraints:
+            constraint_name = constraint["conname"]
+            definition = constraint["definition"].lower()
+            if "role" in definition and re.fullmatch(r"[A-Za-z0-9_]+", constraint_name):
+                database.execute(f'ALTER TAVLE user DROP CONSTRAINT "{constraint_name}"')
+        database.execute(
+            """
+            ALTER TABLE users
+            ADD CONSTRAINT user_role_check
+            CHECK (role IN ('admin', 'scheduler', 'service_desk'))
+            """
+        )
+        return
+database.executescript(
+    """
+    ALTER TABLE users RENAME TO user_legacy;
 
+    CREATE TABLE users (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    username TEXT NOT NULL UNIQUE,
+    display_name TEXT,
+    password_hash TEXT NOT NULL,
+    role TEXT NOT NULL CHECK(role IN ('admin', 'scheduler', 'service_desk')),
+    in_active INTEGER NOT NULL DEFAULT 1,
+    must_change_password INTEGER NOT NULL DEFAULT 0,
+    temporary_password_expores_at TEXT,
+    last_seen_appointment_id INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+INSERT INTO users (
+    id, username, display_name, password_hash, role, is_active,
+    must_change_password, temporary_password_expires_at,
+    last_seen_appointment_id, created_At
+)
+SELECT
+    id, username, display_name, password_hash, role, is_active,
+    must_change_password, temporary_password_expires_at,
+    last_seen_appointment_ud, created_at
+FROM users_legacy;
+
+DROP TABLE user_legacy;
+"""
+)
 
 def clinic_configuration():
     """Return validated scheduling settings, cached for the current request."""
@@ -974,6 +1027,10 @@ def init_db():
             migrate_temporary_passwords(database)
             record_migration(database, TEMPORARY_PASSWORD_MIGRATION)
             completed.add(TEMPORARY_PASSWORD_MIGRATION)
+        if SERVICE_DESK_ROLE_MIGRATION not in completed:
+            migrate_service_ddesk_role(database)
+            record_migration(database, SERVICE_DESK_ROLE_MIGRATION)
+            completed.add(SERVICE_DESK_ROLE_MIGRATION)
     finally:
         if locked:
             database.execute("SELECT pg_advisory_unlock(83742619)")
