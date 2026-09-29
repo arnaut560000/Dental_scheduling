@@ -2748,7 +2748,7 @@ def schedule_request(request_id):
                     last_name, first_name, middle_initial, birth_date, gender, barangay,
                     category, contact_number, contact_key, email, appointment_date,
                     appointment_time, registration_mode, status, called
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Online', 'Approved', 1)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Approved', 1)
                 """,
                 (
                     fresh_request["last_name"],
@@ -2763,6 +2763,7 @@ def schedule_request(request_id):
                     fresh_request["email"],
                     appointment_date,
                     appointment_time,
+                    fresh_request["registratio_mode"],
                 ),
             )
 
@@ -2787,8 +2788,8 @@ def schedule_request(request_id):
                 new_date=appointment_date,
                 new_time=appointment_time,
                 notes=(
-                    "Appointment created from the online request queue. "
-                    "Mode of registration: Online."
+                    ""Appointment created from the client request queue. "
+                    f"Mode of registration: {fresh_request['registration_mode']}."
                 ),
                 request_submitted_at=str(fresh_request["created_at"]),
             )
@@ -2938,6 +2939,90 @@ def add_manual_appointment():
 
     return redirect(url_for("appointments", section="approved"))
 
+@app.post("/admin/requests/manual")
+@roles_required("admin", "scheduler")
+def add_manual_client_request():
+    """Add a staff-recorded client to the waiting-for-schedule queue."""
+    fields = {
+        "last_name": request.form.get("last_name", "").strip(),
+        "first_name": request.form.get("first_name", "").strip(),
+        "middle_initial": request.form.get("middle_initial", "").strip(),
+        "birth_date": request.form.get("birth_date", ""),
+        "gender": request.form.get("gender", ""),
+        "barangay": request.form.get("barangay", ""),
+        "category": request.form.get("category", ""),
+        "contact_number": request.form.get("contact_number", "").strip(),
+        "email": request.form.get("email", "").strip(),
+        "registration_mode": request.form.get("registration_mode", ""),
+    }
+    contact_key = normalize_contact(fields["contact_number"])
+
+    if not fields["last_name"] or not fields["first_name"]:
+        flash("Enter the client's first and last name.", "error")
+    elif any(len(fields[key]) > 80 for key in ("last_name", "first_name")):
+        flash("Client names must be 80 characters or fewer.", "error")
+    elif len(fields["middle_initial"]) > 10:
+        flash("The middle initial must be 10 characters or fewer.", "error")
+    elif not all(
+        valid_client_name(fields[name], allow_empty=name == "middle_initial")
+        for name in ("last_name", "first_name", "middle_initial")
+    ):
+        flash("Client names can use letters, spaces, apostrophes, periods, and hyphens only.", "error")
+    elif not valid_birth_date(fields["birth_date"]):
+        flash("Enter a valid birth date.", "error")
+    elif fields["gender"] not in VALID_GENDERS:
+        flash("Choose a valid gender.", "error")
+    elif fields["barangay"] not in BARANGAYS:
+        flash("Choose a valid barangay.", "error")
+    elif fields["category"] not in VALID_CATEGORIES:
+        flash("Choose a valid client sector.", "error")
+    elif len(contact_key) != 11:
+        flash("Enter an 11-digit contact number.", "error")
+    elif not valid_email(fields["email"]):
+        flash("Enter a valid email address or leave it blank.", "error")
+    elif fields["registration_mode"] not in {"Email", "Form", "Text"}:
+        flash("Choose how the client registered.", "error")
+    else:
+        try:
+            request_id = insert_and_get_id(
+                db(),
+                """
+                INSERT INTO client_requests (
+                    request_code, last_name, first_name, middle_initial, birth_date,
+                    gender, barangay, category, contact_number, contact_key, email,
+                    registration_mode, privacy_consent, consent_at, privacy_notice_version
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, CURRENT_TIMESTAMP, 'staff-recorded')
+                """,
+                (
+                    generate_request_code(),
+                    fields["last_name"],
+                    fields["first_name"],
+                    fields["middle_initial"],
+                    fields["birth_date"],
+                    fields["gender"],
+                    fields["barangay"],
+                    fields["category"],
+                    fields["contact_number"],
+                    contact_key,
+                    fields["email"] or None,
+                    fields["registration_mode"],
+                ),
+            )
+            audit(
+                "client_request_added_manually",
+                details=(
+                    f"client_request_id={request_id}; "
+                    f"registration_mode={fields['registration_mode']}"
+                ),
+            )
+            db().commit()
+            flash("Client added to the waiting-for-schedule list.", "success")
+            return redirect(url_for("appointments", section="pending"))
+        except (sqlite3.IntegrityError, PostgresIntegrityError):
+            db().rollback()
+            flash("The client request could not be saved. Please try again.", "error")
+
+    return redirect(url_for("appointments", section="pending"))
 
 @app.post("/admin/requests/<int:request_id>/reject")
 @roles_required("admin", "scheduler")
