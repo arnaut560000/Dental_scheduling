@@ -1,1 +1,108 @@
+{% extends 'base.html' %}
 
+{% block title %}Service Desk . Municipal Dental Service{% endblock %}
+
+{% block content %}
+<div class="page-title">
+  <div>
+  <p class="eyebrow">SERVICE DESK</p>
+  <h1>Today's scheduled clients</h1>
+  <p class="notice">View today's approved schedules and record clients already served as walk-ins.</p>
+  </div>
+</div>
+
+<div class="dashboard-grid">
+  <section class="card table-vcard">
+    <div class="section-summary">
+      <div>
+        <p class="eyebrow">TODAY . {{ today }} </p>
+        <h2>Scheduled appoointments</h2>
+      </div>
+      <span class="section-count">{{ scheduled_clients|length }} scheduled</span>
+    </div>
+
+    {% if scheduled_clients %}
+      <table class="wide">
+        <thread>
+          <tr>
+            <th>Time</th>
+            <th>Client</th>
+            <th>Sector</th>
+            <th>Barangay</th>
+            <th>Contact</th>
+          </tr>
+        </thread>
+        <tbody>
+          {% for client in scheduled_clients %}
+          <tr>
+            <td><strong>{{ client.appointment_time}|time12 }}</strong></td>
+            <td>
+              <strong>{{ client.last_name|client_name }}, {{ client.first_name|clienbt_name }} {{ (client.middle_initial or '')|client_name }}</strong>
+            </td>
+            <td>{{ client.category }}</td>
+            <td>{{ client.barangay }}</td>
+            <td>{{ client.contact_number }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+      </table>
+    {% else %}
+      <p class="empty">No approved clients are scheduled for today.</p>
+    {% endif %}
+  </section>
+
+
+  <section class="card">
+    <p class="eyebrow">WALK-IN CLIENT</p>
+    <h2>Record client as served</h2>
+    <p class="notice">Walk-ins are immediately saved as served and marked with registration mode “Walk-in.”</p>
+
+    <form method="post" action="{{ url_for('record_walk_in') }}" class="form-grid">
+      <label>Last name*
+        <input name="last_name" required maxlength="80">
+      </label>
+      <label>First name*
+        <input name="first_name" required maxlength="80">
+      </label>
+      <label>Middle initial
+        <input name="middle_initial" maxlength="10">
+      </label>
+      <label>Birth date*
+        <input type="date" name="birth_date" required max="{{ today }}">
+      </label>
+      <label>Gender*
+        <select name="gender" required>
+          <option value="">Select gender</option>
+          <option value="Female">Female</option>
+          <option value="Male">Male</option>
+          <option value="Others">Others</option>
+        </select>
+      </label>
+      <label>Client sector*
+        <select name="category" required>
+          <option value="">Select sector</option>
+          {% for category in categories %}
+            <option value="{{ category }}">{{ category }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>Barangay*
+        <select name="barangay" required>
+          <option value="">Select barangay</option>
+          {% for barangay in barangays %}
+            <option value="{{ barangay }}">{{ barangay }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>11-digit phone*
+        <input name="contact_number" inputmode="numeric" pattern="[0-9]{11}" maxlength="11" required>
+      </label>
+      <label class="form-grid-full">Email address <span class="muted">(optional)</span>
+        <input type="email" name="email">
+      </label>
+      <button class="form-grid-full" type="submit">Record walk-in as served</button>
+    </form>
+  </section>
+</div>
+{% endblock %}
+    
