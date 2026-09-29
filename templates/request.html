@@ -147,7 +147,8 @@
       <label class="full-width">
         Valid ID <strong>*</strong>
         <input id="id-document" type="file" name="id_document" accept=".jpg,.jpeg,.png,.webp,.pdf">
-        <small>Upload a clear JPG, PNG, WebP, or PDF file. Maximum file size: 5 MB.</small>
+        <small>Upload a clear JPG, PNG, WebP, or PDF file. Maximum file size: 10 MB.</small>
+        <small id="id-upload-draft-note" hidden></small>
       </label>
     </section>
 
@@ -166,31 +167,123 @@
 {% endblock %}
 
 {% block scripts %}
-  <script>
-    const categoryInputs = document.querySelectorAll('input[name="category"]');
-    const idUploadSection = document.getElementById('id-upload-section');
-    const idDocumentInput = document.getElementById('id-document');
-
-    function updateIdUploadRequirement() {
-      const selectedCategory = Array.from(categoryInputs).find(function (input) {
-        return input.checked;
-      });
-      const needsId = selectedCategory && ['PWD', 'Senior Citizen'].includes(selectedCategory.value);
-      idUploadSection.hidden = !needsId;
-      idDocumentInput.required = Boolean(needsId);
-      if (!needsId) idDocumentInput.value = '';
-    }
-
-    categoryInputs.forEach(function (checkbox) {
-      checkbox.addEventListener('change', function () {
-        if (checkbox.checked) {
-          categoryInputs.forEach(function (other) {
-            if (other !== checkbox) other.checked = false;
-          });
-        }
-        updateIdUploadRequirement();
-      });
-    });
-    updateIdUploadRequirement();
+  +   <script>
++     const requestForm = document.querySelector('form.appointment-form[enctype="multipart/form-data"]');
++     const categoryInputs = document.querySelectorAll('input[name="category"]');
++     const idUploadSection = document.getElementById('id-upload-section');
++     const idDocumentInput = document.getElementById('id-document');
++     const idUploadDraftNote = document.getElementById('id-upload-draft-note');
++     const draftStorageKey = 'edental-request-draft-v1';
++     const maxIdUploadBytes = 10 * 1024 * 1024;
++     let restoredDraft = false;
++
++     function selectedValue(selector) {
++       const element = document.querySelector(selector);
++       return element ? element.value : '';
++     }
++
++     function updateIdUploadRequirement() {
++       const selectedCategory = Array.from(categoryInputs).find(function (input) {
++         return input.checked;
++       });
++       const needsId = selectedCategory && ['PWD', 'Senior Citizen'].includes(selectedCategory.value);
++       idUploadSection.hidden = !needsId;
++       idDocumentInput.required = Boolean(needsId);
++
++       if (!needsId) {
++         idDocumentInput.value = '';
++         idDocumentInput.setCustomValidity('');
++         idUploadDraftNote.hidden = true;
++       } else if (restoredDraft) {
++         idUploadDraftNote.textContent = 'For privacy, please choose the ID file again after refreshing.';
++         idUploadDraftNote.hidden = false;
++       }
++     }
++
++     function saveDraft() {
++       if (!requestForm) return;
++       const selectedCategory = Array.from(categoryInputs).find(function (input) {
++         return input.checked;
++       });
++       const selectedGender = document.querySelector('input[name="gender"]:checked');
++       const privacyConsent = requestForm.querySelector('input[name="privacy_consent"]');
++
++       const draft = {
++         last_name: selectedValue('[name="last_name"]'),
++         first_name: selectedValue('[name="first_name"]'),
++         middle_initial: selectedValue('[name="middle_initial"]'),
++         birth_date: selectedValue('[name="birth_date"]'),
++         gender: selectedGender ? selectedGender.value : '',
++         barangay: selectedValue('[name="barangay"]'),
++         contact_number: selectedValue('[name="contact_number"]'),
++         email: selectedValue('[name="email"]'),
++         category: selectedCategory ? selectedCategory.value : '',
++         privacy_consent: privacyConsent ? privacyConsent.checked : false,
++       };
++
++       try {
++         sessionStorage.setItem(draftStorageKey, JSON.stringify(draft));
++       } catch (error) {
++         // The form remains usable if browser storage is unavailable.
++       }
++     }
++
++     function restoreDraft() {
++       if (!requestForm) return;
++
++       try {
++         const savedDraft = JSON.parse(sessionStorage.getItem(draftStorageKey) || 'null');
++         if (!savedDraft) return;
++
++         ['last_name', 'first_name', 'middle_initial', 'birth_date', 'barangay', 'contact_number', 'email'].forEach(function (name) {
++           const input = requestForm.querySelector(`[name="${name}"]`);
++           if (input && savedDraft[name]) input.value = savedDraft[name];
++         });
++
++         const gender = requestForm.querySelector(`input[name="gender"][value="${savedDraft.gender}"]`);
++         if (gender) gender.checked = true;
++
++         const category = requestForm.querySelector(`input[name="category"][value="${savedDraft.category}"]`);
++         if (category) category.checked = true;
++
++         const privacyConsent = requestForm.querySelector('input[name="privacy_consent"]');
++         if (privacyConsent) privacyConsent.checked = Boolean(savedDraft.privacy_consent);
++
++         restoredDraft = true;
++       } catch (error) {
++         // Ignore an invalid or unavailable saved draft.
++       }
++     }
++
++     categoryInputs.forEach(function (checkbox) {
++       checkbox.addEventListener('change', function () {
++         if (checkbox.checked) {
++           categoryInputs.forEach(function (other) {
++             if (other !== checkbox) other.checked = false;
++           });
++         }
++         updateIdUploadRequirement();
++         saveDraft();
++       });
++     });
++
++     if (requestForm) {
++       requestForm.addEventListener('input', saveDraft);
++       requestForm.addEventListener('change', saveDraft);
++     }
++
++     idDocumentInput.addEventListener('change', function () {
++       const file = idDocumentInput.files[0];
++       if (file && file.size > maxIdUploadBytes) {
++         idDocumentInput.setCustomValidity('The uploaded ID must be 10 MB or smaller.');
++       } else {
++         idDocumentInput.setCustomValidity('');
++       }
++       saveDraft();
++     });
++
++     restoreDraft();
++     updateIdUploadRequirement();
++   </script>
   </script>
 {% endblock %}
