@@ -1072,7 +1072,11 @@ def roles_required(*allowed_roles):
         def wrapped(*args, **kwargs):
             if g.current_user["role"] not in allowed_roles:
                 flash("You do not have permission to access that page.", "error")
-                return redirect(url_for("dashboard"))
+                return redirect(
+                    url_for("service_desk")
+                    if g.current_user["role"] == "service_desk"
+                    else url_for("dashboard")
+                )
 
             return view(*args, **kwargs)
         return wrapped
@@ -2024,8 +2028,13 @@ def login():
             session["username"] = user["username"]
             session["display_name"] = user["display_name"] or user["username"]
             session["role"] = user["role"]
-            return redirect(url_for("change_password") if user["must_change_password"] else url_for("dashboard"))
-        flash("Invalid username or password.", "error")
+            if user["must_change_password"]:
+                return redirect(url_for("change_password"))
+            return redirect(
+                url_for("service_desk")
+                if user["role"] == "service_desk"
+                else url_for("dashboard")
+            )
     return render_template("login.html")
 
 
@@ -2033,6 +2042,115 @@ def login():
 def logout():
     session.clear()
     return redirect(url_for("login"))
+
+@app.get("/admin/service-desk")
+@roles_required("service_desk")
+def service_desk():
+    today = clinic_today().isoformat()
+    scheduled_clients = db().execiute(
+        """
+        SELECT id, last_name, first_name, middle_initial category,
+                barangay, contact_number, appontment_time
+        FROM appointments
+        WHERE appointment_date=? AND status='Approved'
+        ORDER BY appointment_time ASC, id ASC
+        """,
+        (today,),
+    ).fetchall()
+    return render_template(
+        "service_desk.html",
+        today=today,
+        scheduler_clients=scheduled_clients,
+        categories=sorted(VALID_CATEGORIES),
+        barangays=BARANGAYS,
+    )
+
+@app.post("/admin/service-desk/walk-ins")
+ @roles_required("service_desk")
+ def record_walk_in():
+     fields = {
+         "last_name": request.form.get("last_name", "").strip(),
+         "first_name": request.form.get("first_name", "").strip(),
+         "middle_initial": request.form.get("middle_initial", "").strip(),
+         "birth_date": request.form.get("birth_date", ""),
+         "gender": request.form.get("gender", ""),
+         "barangay": request.form.get("barangay", ""),
+         "category": request.form.get("category", ""),
+         "contact_number": request.form.get("contact_number", "").strip(),
+         "email": request.form.get("email", "").strip(),
+     }
+     contact_key = normalize_contact(fields["contact_number"])
+
+     if not fields["last_name"] or not fields["first_name"]:
+         flash("Enter the client's first and last name.", "error")
+     elif any(len(fields[key]) > 80 for key in ("last_name", "first_name")):
+         flash("Client names must be 80 characters or fewer.", "error")
+     elif len(fields["middle_initial"]) > 10:
+         flash("The middle initial must be 10 characters or fewer.", "error")
+     elif not all(
+         valid_client_name(fields[name], allow_empty=name == "middle_initial")
+         for name in ("last_name", "first_name", "middle_initial")
+     ):
+         flash("Client names can use letters, spaces, apostrophes, periods, and hyphens only.", "error")
+     elif not valid_birth_date(fields["birth_date"]):
+         flash("Enter a valid birth date.", "error")
+     elif fields["gender"] not in VALID_GENDERS:
+         flash("Choose a valid gender.", "error")
+     elif fields["barangay"] not in BARANGAYS:
+         flash("Choose a valid barangay.", "error")
+     elif fields["category"] not in VALID_CATEGORIES:
+         flash("Choose a valid client sector.", "error")
+     elif len(contact_key) != 11:
+         flash("Enter an 11-digit contact number.", "error")
+     elif not valid_email(fields["email"]):
+         flash("Enter a valid email address or leave it blank.", "error")
+     else:
+         database = db()
+         served_date = clinic_today().isoformat()
+         served_time = clinic_now().strftime("%H:%M")
+         try:
+             begin_write_transaction(database)
+             appointment_id = insert_and_get_id(
+                 database,
+                 """
+                 INSERT INTO appointments (
+                     last_name, first_name, middle_initial, birth_date, gender, barangay,
+                     category, contact_number, contact_key, email, appointment_date,
+                     appointment_time, registration_mode, status, called
+                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Walk-in', 'Finished', 0)
+                 """,
+                 (
+                     fields["last_name"], fields["first_name"], fields["middle_initial"],
+                     fields["birth_date"], fields["gender"], fields["barangay"],
+                     fields["category"], fields["contact_number"], contact_key,
+                     fields["email"] or None, served_date, served_time,
+                 ),
+             )
+             record_appointment_history(
+                 appointment_id,
+                 "Walk-in recorded as served",
+                 new_status="Finished",
+                 new_date=served_date,
+                 new_time=served_time,
+                 notes="Recorded by Service Desk as a walk-in.",
+             )
+             audit(
+                 "walk_in_client_served",
+                 appointment_id=appointment_id,
+                 details=(
+                     f"registration_mode=Walk-in; date={served_date}; "
+                     f"time={served_time}"
+                 ),
+             )
+             database.commit()
+             flash("Walk-in client recorded as served.", "success")
+             return redirect(url_for("service_desk"))
+         except (sqlite3.IntegrityError, PostgresIntegrityError):
+             database.rollback()
+             flash("The walk-in client could not be saved. Please try again.", "error")
+
+     return redirect(url_for("service_desk"))
+
 
 
 @app.get("/admin")
@@ -2320,7 +2438,7 @@ def accounts():
             flash("Display name must contain 2–80 characters.", "error")
         elif not valid_password(password):
             flash(PASSWORD_REQUIREMENT, "error")
-        elif role not in {"admin", "scheduler"}:
+        elif role not in {"admin", "scheduler", "service_desk"}:
             flash("Invalid account role.", "error")
         else:
             try:
