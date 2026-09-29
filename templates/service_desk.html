@@ -1,6 +1,6 @@
 {% extends 'base.html' %}
 
-{% block title %}Service Desk . Municipal Dental Service{% endblock %}
+{% block title %}Service Desk · Municipal Dental Service{% endblock %}
 
 {% block content %}
 <div class="page-title">
@@ -12,18 +12,18 @@
 </div>
 
 <div class="dashboard-grid">
-  <section class="card table-vcard">
+  <section class="card table-card">
     <div class="section-summary">
       <div>
-        <p class="eyebrow">TODAY . {{ today }} </p>
-        <h2>Scheduled appoointments</h2>
+        <p class="eyebrow">TODAY · {{ today }}</p>
+        <h2>Scheduled appointments</h2>
       </div>
       <span class="section-count">{{ scheduled_clients|length }} scheduled</span>
     </div>
 
     {% if scheduled_clients %}
       <table class="wide">
-        <thread>
+        <thead>
           <tr>
             <th>Time</th>
             <th>Client</th>
@@ -31,13 +31,13 @@
             <th>Barangay</th>
             <th>Contact</th>
           </tr>
-        </thread>
+        </thead>
         <tbody>
           {% for client in scheduled_clients %}
           <tr>
-            <td><strong>{{ client.appointment_time}|time12 }}</strong></td>
+            <td><strong>{{ client.appointment_time|time12 }}</strong></td>
             <td>
-              <strong>{{ client.last_name|client_name }}, {{ client.first_name|clienbt_name }} {{ (client.middle_initial or '')|client_name }}</strong>
+              <strong>{{ client.last_name|client_name }}, {{ client.first_name|client_name }} {{ (client.middle_initial or '')|client_name }}</strong>
             </td>
             <td>{{ client.category }}</td>
             <td>{{ client.barangay }}</td>

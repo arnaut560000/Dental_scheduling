@@ -23,7 +23,7 @@
  {% set staff_home = 'service_desk' if session.get('role') == 'service_desk' else 'dashboard' %} 
 <body class="{% if has_authenticated_staff and not is_public_client_page %}staff-layout{% else %}public-layout{% endif %}">
   <header class="site-header">
-     <a class="brand" href="{{ url_for(staff_home) if has authenticated_staff and not is_public_client else_for('login') }}" aria-label="{% if has_authenticated_staff and not is_public_client_page %}Open staff home{% else %}Open staff sign in{% endif %}">
+     <a class="brand" href="{{ url_for(staff_home) if has_authenticated_staff and not is_public_client_page else url_for('login') }}" aria-label="{% if has_authenticated_staff and not is_public_client_page %}Open staff home{% else %}Open staff sign in{% endif %}">
         <img
           src="{{ url_for('static', filename='municipal-dental-logo.png') }}"
           alt="Municipal Dental Service Appointment and Management System"
@@ -44,7 +44,8 @@
                <a class="{% if request.endpoint == 'accounts' %}is-active{% endif %}" href="{{ url_for('accounts') }}" {% if request.endpoint == 'accounts' %}aria-current="page"{% endif %}>Accounts</a>
                <a class="{% if request.endpoint == 'clinic_settings_page' %}is-active{% endif %}" href="{{ url_for('clinic_settings_page') }}" {% if request.endpoint == 'clinic_settings_page' %}aria-current="page"{% endif %}>Settings</a>
                <a class="{% if request.endpoint == 'audit_log' %}is-active{% endif %}" href="{{ url_for('audit_log') }}" {% if request.endpoint == 'audit_log' %}aria-current="page"{% endif %}>Audit log</a>
-            {% endif %}
+             {% endif %}
+           {% endif %}
           {% endif %}
           <a class="{% if request.endpoint == 'change_password' %}is-active{% endif %}" href="{{ url_for('change_password') }}" {% if request.endpoint == 'change_password' %}aria-current="page"{% endif %}>Change password</a>
           {% if not must_change_password and session.role != 'service_desk' %}

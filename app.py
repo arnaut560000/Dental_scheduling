@@ -386,7 +386,7 @@ def apply_initial_schema(database):
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             username TEXT NOT NULL UNIQUE,
             password_hash TEXT NOT NULL,
-            role TEXT NOT NULL CHECK(role IN ('admin', 'scheduler', 'service desk')),
+            role TEXT NOT NULL CHECK(role IN ('admin', 'scheduler', 'service_desk')),
             is_active INTEGER NOT NULL DEFAULT 1,
             must_change_password INTEGER NOT NULL DEFAULT 0,
             temporary_password_expires_at TEXT,
@@ -555,6 +555,7 @@ REQUEST_SUBMITTED_HISTORY_MIGRATION = "008_appointment_request_submitted_history
 GENERAL_PUBLIC_CATEGORY_MIGRATION = "009_general_public_category"
 ID_DOCUMENT_MIGRATION = "010_client_id_document"
 TEMPORARY_PASSWORD_MIGRATION = "011_temporary_passwords"
+SERVICE_DESK_ROLE_MIGRATION = "012_service_desk_role"
 
 DEFAULT_CLINIC_SETTINGS = {
     "clinic_days": "0,2,4",
@@ -813,60 +814,61 @@ def migrate_temporary_passwords(database):
         )
     if "temporary_password_expires_at" not in columns:
         database.execute("ALTER TABLE users ADD COLUMN temporary_password_expires_at TEXT")
-def mifrate_service_desk_role(database):
-    """Allow the restricted Service Desk stall role."""
-    if using_postgre(database):
+def migrate_service_desk_role(database):
+    """Allow the restricted Service Desk staff role."""
+    if using_postgres(database):
         constraints = database.execute(
             """
-            Select conname, pg_get_constraindef(oid) AS definition
+            SELECT conname, pg_get_constraintdef(oid) AS definition
             FROM pg_constraint
-            WHERE conrelid = 'user'::regclass AND contype = 'c'
+            WHERE conrelid = 'users'::regclass AND contype = 'c'
             """
         ).fetchall()
-        for constrain in constraints:
+        for constraint in constraints:
             constraint_name = constraint["conname"]
             definition = constraint["definition"].lower()
             if "role" in definition and re.fullmatch(r"[A-Za-z0-9_]+", constraint_name):
-                database.execute(f'ALTER TAVLE user DROP CONSTRAINT "{constraint_name}"')
+                database.execute(f'ALTER TABLE users DROP CONSTRAINT "{constraint_name}"')
         database.execute(
             """
             ALTER TABLE users
-            ADD CONSTRAINT user_role_check
+            ADD CONSTRAINT users_role_check
             CHECK (role IN ('admin', 'scheduler', 'service_desk'))
             """
         )
         return
-database.executescript(
-    """
-    ALTER TABLE users RENAME TO user_legacy;
+
+    database.executescript(
+        """
+    ALTER TABLE users RENAME TO users_legacy;
 
     CREATE TABLE users (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    username TEXT NOT NULL UNIQUE,
-    display_name TEXT,
-    password_hash TEXT NOT NULL,
-    role TEXT NOT NULL CHECK(role IN ('admin', 'scheduler', 'service_desk')),
-    in_active INTEGER NOT NULL DEFAULT 1,
-    must_change_password INTEGER NOT NULL DEFAULT 0,
-    temporary_password_expores_at TEXT,
-    last_seen_appointment_id INTEGER NOT NULL DEFAULT 0,
-    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        username TEXT NOT NULL UNIQUE,
+        display_name TEXT,
+        password_hash TEXT NOT NULL,
+        role TEXT NOT NULL CHECK(role IN ('admin', 'scheduler', 'service_desk')),
+        is_active INTEGER NOT NULL DEFAULT 1,
+        must_change_password INTEGER NOT NULL DEFAULT 0,
+        temporary_password_expires_at TEXT,
+        last_seen_appointment_id INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
 
-INSERT INTO users (
-    id, username, display_name, password_hash, role, is_active,
-    must_change_password, temporary_password_expires_at,
-    last_seen_appointment_id, created_At
-)
-SELECT
-    id, username, display_name, password_hash, role, is_active,
-    must_change_password, temporary_password_expires_at,
-    last_seen_appointment_ud, created_at
-FROM users_legacy;
+    INSERT INTO users (
+        id, username, display_name, password_hash, role, is_active,
+        must_change_password, temporary_password_expires_at,
+        last_seen_appointment_id, created_at
+    )
+    SELECT
+        id, username, display_name, password_hash, role, is_active,
+        must_change_password, temporary_password_expires_at,
+        last_seen_appointment_id, created_at
+    FROM users_legacy;
 
-DROP TABLE user_legacy;
-"""
-)
+    DROP TABLE users_legacy;
+    """
+    )
 
 def clinic_configuration():
     """Return validated scheduling settings, cached for the current request."""
@@ -1028,7 +1030,7 @@ def init_db():
             record_migration(database, TEMPORARY_PASSWORD_MIGRATION)
             completed.add(TEMPORARY_PASSWORD_MIGRATION)
         if SERVICE_DESK_ROLE_MIGRATION not in completed:
-            migrate_service_ddesk_role(database)
+            migrate_service_desk_role(database)
             record_migration(database, SERVICE_DESK_ROLE_MIGRATION)
             completed.add(SERVICE_DESK_ROLE_MIGRATION)
     finally:
@@ -2052,10 +2054,10 @@ def logout():
 @roles_required("service_desk")
 def service_desk():
     today = clinic_today().isoformat()
-    scheduled_clients = db().execiute(
+    scheduled_clients = db().execute(
         """
-        SELECT id, last_name, first_name, middle_initial category,
-                barangay, contact_number, appontment_time
+        SELECT id, last_name, first_name, middle_initial, category,
+               barangay, contact_number, appointment_time
         FROM appointments
         WHERE appointment_date=? AND status='Approved'
         ORDER BY appointment_time ASC, id ASC
@@ -2065,96 +2067,96 @@ def service_desk():
     return render_template(
         "service_desk.html",
         today=today,
-        scheduler_clients=scheduled_clients,
+        scheduled_clients=scheduled_clients,
         categories=sorted(VALID_CATEGORIES),
         barangays=BARANGAYS,
     )
 
 @app.post("/admin/service-desk/walk-ins")
- @roles_required("service_desk")
- def record_walk_in():
-     fields = {
-         "last_name": request.form.get("last_name", "").strip(),
-         "first_name": request.form.get("first_name", "").strip(),
-         "middle_initial": request.form.get("middle_initial", "").strip(),
-         "birth_date": request.form.get("birth_date", ""),
-         "gender": request.form.get("gender", ""),
-         "barangay": request.form.get("barangay", ""),
-         "category": request.form.get("category", ""),
-         "contact_number": request.form.get("contact_number", "").strip(),
-         "email": request.form.get("email", "").strip(),
-     }
-     contact_key = normalize_contact(fields["contact_number"])
+@roles_required("service_desk")
+def record_walk_in():
+    fields = {
+        "last_name": request.form.get("last_name", "").strip(),
+        "first_name": request.form.get("first_name", "").strip(),
+        "middle_initial": request.form.get("middle_initial", "").strip(),
+        "birth_date": request.form.get("birth_date", ""),
+        "gender": request.form.get("gender", ""),
+        "barangay": request.form.get("barangay", ""),
+        "category": request.form.get("category", ""),
+        "contact_number": request.form.get("contact_number", "").strip(),
+        "email": request.form.get("email", "").strip(),
+    }
+    contact_key = normalize_contact(fields["contact_number"])
 
-     if not fields["last_name"] or not fields["first_name"]:
-         flash("Enter the client's first and last name.", "error")
-     elif any(len(fields[key]) > 80 for key in ("last_name", "first_name")):
-         flash("Client names must be 80 characters or fewer.", "error")
-     elif len(fields["middle_initial"]) > 10:
-         flash("The middle initial must be 10 characters or fewer.", "error")
-     elif not all(
-         valid_client_name(fields[name], allow_empty=name == "middle_initial")
-         for name in ("last_name", "first_name", "middle_initial")
-     ):
-         flash("Client names can use letters, spaces, apostrophes, periods, and hyphens only.", "error")
-     elif not valid_birth_date(fields["birth_date"]):
-         flash("Enter a valid birth date.", "error")
-     elif fields["gender"] not in VALID_GENDERS:
-         flash("Choose a valid gender.", "error")
-     elif fields["barangay"] not in BARANGAYS:
-         flash("Choose a valid barangay.", "error")
-     elif fields["category"] not in VALID_CATEGORIES:
-         flash("Choose a valid client sector.", "error")
-     elif len(contact_key) != 11:
-         flash("Enter an 11-digit contact number.", "error")
-     elif not valid_email(fields["email"]):
-         flash("Enter a valid email address or leave it blank.", "error")
-     else:
-         database = db()
-         served_date = clinic_today().isoformat()
-         served_time = clinic_now().strftime("%H:%M")
-         try:
-             begin_write_transaction(database)
-             appointment_id = insert_and_get_id(
-                 database,
-                 """
-                 INSERT INTO appointments (
-                     last_name, first_name, middle_initial, birth_date, gender, barangay,
-                     category, contact_number, contact_key, email, appointment_date,
-                     appointment_time, registration_mode, status, called
-                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Walk-in', 'Finished', 0)
-                 """,
-                 (
-                     fields["last_name"], fields["first_name"], fields["middle_initial"],
-                     fields["birth_date"], fields["gender"], fields["barangay"],
-                     fields["category"], fields["contact_number"], contact_key,
-                     fields["email"] or None, served_date, served_time,
-                 ),
-             )
-             record_appointment_history(
-                 appointment_id,
-                 "Walk-in recorded as served",
-                 new_status="Finished",
-                 new_date=served_date,
-                 new_time=served_time,
-                 notes="Recorded by Service Desk as a walk-in.",
-             )
-             audit(
-                 "walk_in_client_served",
-                 appointment_id=appointment_id,
-                 details=(
-                     f"registration_mode=Walk-in; date={served_date}; "
-                     f"time={served_time}"
-                 ),
-             )
-             database.commit()
-             flash("Walk-in client recorded as served.", "success")
-             return redirect(url_for("service_desk"))
-         except (sqlite3.IntegrityError, PostgresIntegrityError):
-             database.rollback()
-             flash("The walk-in client could not be saved. Please try again.", "error")
+    if not fields["last_name"] or not fields["first_name"]:
+        flash("Enter the client's first and last name.", "error")
+    elif any(len(fields[key]) > 80 for key in ("last_name", "first_name")):
+        flash("Client names must be 80 characters or fewer.", "error")
+    elif len(fields["middle_initial"]) > 10:
+        flash("The middle initial must be 10 characters or fewer.", "error")
+    elif not all(
+        valid_client_name(fields[name], allow_empty=name == "middle_initial")
+        for name in ("last_name", "first_name", "middle_initial")
+    ):
+        flash("Client names can use letters, spaces, apostrophes, periods, and hyphens only.", "error")
+    elif not valid_birth_date(fields["birth_date"]):
+        flash("Enter a valid birth date.", "error")
+    elif fields["gender"] not in VALID_GENDERS:
+        flash("Choose a valid gender.", "error")
+    elif fields["barangay"] not in BARANGAYS:
+        flash("Choose a valid barangay.", "error")
+    elif fields["category"] not in VALID_CATEGORIES:
+        flash("Choose a valid client sector.", "error")
+    elif len(contact_key) != 11:
+        flash("Enter an 11-digit contact number.", "error")
+    elif not valid_email(fields["email"]):
+        flash("Enter a valid email address or leave it blank.", "error")
+    else:
+        database = db()
+        served_date = clinic_today().isoformat()
+        served_time = clinic_now().strftime("%H:%M")
+        try:
+            begin_write_transaction(database)
+            appointment_id = insert_and_get_id(
+                database,
+                """
+                INSERT INTO appointments (
+                    last_name, first_name, middle_initial, birth_date, gender, barangay,
+                    category, contact_number, contact_key, email, appointment_date,
+                    appointment_time, registration_mode, status, called
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Walk-in', 'Finished', 0)
+                """,
+                (
+                    fields["last_name"], fields["first_name"], fields["middle_initial"],
+                    fields["birth_date"], fields["gender"], fields["barangay"],
+                    fields["category"], fields["contact_number"], contact_key,
+                    fields["email"] or None, served_date, served_time,
+                ),
+            )
+            record_appointment_history(
+                appointment_id,
+                "Walk-in recorded as served",
+                new_status="Finished",
+                new_date=served_date,
+                new_time=served_time,
+                notes="Recorded by Service Desk as a walk-in.",
+            )
+            audit(
+                "walk_in_client_served",
+                appointment_id=appointment_id,
+                details=(
+                    f"registration_mode=Walk-in; date={served_date}; "
+                    f"time={served_time}"
+                ),
+            )
+            database.commit()
+            flash("Walk-in client recorded as served.", "success")
+            return redirect(url_for("service_desk"))
+        except (sqlite3.IntegrityError, PostgresIntegrityError):
+            database.rollback()
+            flash("The walk-in client could not be saved. Please try again.", "error")
 
-     return redirect(url_for("service_desk"))
+    return redirect(url_for("service_desk"))
 
 
 
@@ -3285,7 +3287,7 @@ def appointment_history(appointment_id):
 
 
 @app.get("/admin/notifications")
-@login_required
+@roles_required("admin", "scheduler")
 def notifications():
     """Deliver each new client request once to the signed-in staff member."""
     rows = db().execute(
@@ -3331,7 +3333,7 @@ def notifications():
 
 
 @app.post("/admin/notifications/ack")
-@login_required
+@roles_required("admin", "scheduler")
 def acknowledge_notifications():
     """Mark requests up to last_id as seen so they stop popping up for this user."""
     last_id = request.form.get("last_id", type=int)
