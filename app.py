@@ -2077,10 +2077,10 @@ def service_desk():
     scheduled_clients = db().execute(
         """
         SELECT id, last_name, first_name, middle_initial, category,
-               barangay, contact_number, appointment_time
+               barangay, contact_number, appointment_date, appointment_time
         FROM appointments
-        WHERE appointment_date=? AND status='Approved'
-        ORDER BY appointment_time ASC, id ASC
+        WHERE appointment_date >= ? AND status='Approved'
+        ORDER BY appointment_date ASC, appointment_time ASC, id ASC
         """,
         (today,),
     ).fetchall()
